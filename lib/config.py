@@ -10,6 +10,9 @@ class Config:
     def __init__(self):
         self.MODEL = 5  # Path loss model to use (see README)
 
+        self.SCNENARIO = "unicast" 
+        # "default" for given in simulations, "unicast" for simulating reciveing data from user nodes to control center,
+
         self.XSIZE = 15000  # horizontal size of the area to simulate in m
         self.YSIZE = 15000  # vertical size of the area to simulate in m
         self.OX = 0.0  # origin x-coordinate
@@ -100,7 +103,7 @@ class Config:
         #################################################
         ####### MOVING NODE SIMULATION VARIABLES ########
         #################################################
-        self.MOVEMENT_ENABLED = True
+        self.MOVEMENT_ENABLED = False
         # The average number of meters a human walks in a minute
         self.WALKING_METERS_PER_MIN = 96
         # The average number of meters a human bikes in a minute

@@ -182,11 +182,16 @@ class MeshNode:
             # do not generate a message near the end of the simulation (otherwise flooding cannot finish in time)
             if nextGen >= 0:
                 yield self.env.timeout(nextGen)
-
-                if self.conf.DMs:
-                    destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if i is not self.nodeid])
-                else:
-                    destId = NODENUM_BROADCAST
+                if self.conf.SCNENARIO == "default" :
+                    if self.conf.DMs:
+                        destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if i is not self.nodeid])
+                    else:
+                        destId = NODENUM_BROADCAST
+                elif self.conf.SCNENARIO == "unicast":
+                    if not self.nodeid == 0:
+                        destId = 0
+                    else :
+                        break 
 
                 p = self.send_packet(destId)
 
