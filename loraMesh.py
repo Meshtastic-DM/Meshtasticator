@@ -7,7 +7,7 @@ import yaml
 import simpy
 import numpy as np
 
-from lib.common import Graph, plot_schedule, gen_scenario, run_graph_updates, setup_asymmetric_links
+from lib.common import Graph, plot_schedule, gen_scenario, run_graph_updates, setup_asymmetric_links, generate_receive_power_graph, generate_receive_power_3d_graph
 from lib.config import Config
 from lib.discrete_event import BroadcastPipe
 from lib.node import MeshNode
@@ -103,6 +103,12 @@ conf.update_router_dependencies()
 # start simulation
 print("\n====== START OF SIMULATION ======")
 env.run(until=conf.SIMTIME)
+
+fig,ax =generate_receive_power_graph(conf, nodes,0)
+fig.show()
+
+fig2,ax2 =generate_receive_power_3d_graph(conf, nodes,0)
+fig2.show()
 
 # compute statistics
 print("\n====== END OF SIMULATION ======")

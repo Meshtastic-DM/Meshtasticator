@@ -192,6 +192,13 @@ class MeshNode:
                         destId = 0
                     else :
                         break 
+                elif self.conf.SCNENARIO == "broadcast":
+                    if self.nodeid == 0:
+                        destId = NODENUM_BROADCAST
+                    else:
+                        break
+                    
+                
 
                 p = self.send_packet(destId)
 
@@ -316,6 +323,9 @@ class MeshNode:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received real ACK.')
                         realAckReceived = True
                         sentPacket.ackReceived = True
+
+                    if sentPacket.seq == p.seq and sentPacket.txNodeId == self.nodeid :
+                        ackReceived = True
 
                 # send real ACK if you are the destination and you did not yet send the ACK
                 if p.wantAck and p.destId == self.nodeid and not any(pA.requestId == p.seq for pA in self.packets):

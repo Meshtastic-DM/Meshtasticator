@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 from matplotlib.widgets import Button, Slider, RadioButtons, TextBox
 from lib import phy
+from mpl_toolkits.mplot3d import Axes3D  # Required for 3D plotting
 
 try:
 	matplotlib.use("TkAgg")
@@ -399,3 +400,95 @@ def setup_asymmetric_links(conf, nodes):
 					noLinks += 1
 
 	return totalPairs, symmetricLinks, asymmetricLinks, noLinks
+
+def generate_receive_power_graph(conf,nodes,node_id =0):
+	node = nodes[node_id]
+	# Create a new figure
+	fig, ax = plt.subplots()
+	ax.set_title(f"RSSI at other nodes for Node {node.nodeid} using path loss model {conf.MODEL}")
+	ax.set_xlabel("Distance (m)")
+	ax.set_ylabel("Receive Power (dBm)")
+
+	# Get the receive power values for the node over time
+	distance_values = []
+	power_values = []
+	
+	for other_node in nodes:
+		if other_node.nodeid == node.nodeid:
+			continue
+		dist = calc_dist(node.x, other_node.x, node.y, other_node.y, node.z, other_node.z)
+		distance_values.append(dist)
+		path_loss = phy.estimate_path_loss(conf, dist, conf.FREQ, node.z, other_node.z)
+		rssi = conf.PTX + node.antennaGain + other_node.antennaGain - path_loss
+		power_values.append(rssi)
+	# Sort the values for better plotting
+	nodes_ids = [n.nodeid for n in nodes if n.nodeid != node.nodeid]
+	sorted_indices = np.argsort(distance_values)
+	distance_values = np.array(distance_values)[sorted_indices]
+	power_values = np.array(power_values)[sorted_indices]
+	nodes_ids = np.array(nodes_ids)[sorted_indices]
+	# Plot the receive power values
+	for d, p, other_node in zip(distance_values, power_values, nodes_ids):
+		ax.plot(d, p, marker='o', color='blue')
+		ax.text(d, p, str(other_node), fontsize=9, ha='center', va='bottom')
+	ax.plot(distance_values, power_values, linestyle='-', color='blue', label=f'Node {node.nodeid}')
+	ax.axhline(y=conf.SENSMODEM[conf.MODEM], color='red', linestyle='--', label='Sensitivity Threshold')
+	ax.legend()
+	ax.grid()
+	# Show the plot
+	#plt.show()
+	return fig, ax
+
+
+
+def generate_receive_power_3d_graph(conf, nodes, node_id=0):
+    node = nodes[node_id]
+    
+    # Create a 3D figure
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_title(f"3D RSSI Plot for Node {node.nodeid} using Path Loss Model {conf.MODEL}")
+    ax.set_xlabel("2D Distance (m)")
+    ax.set_ylabel("Receiver Height (m)")
+    ax.set_zlabel("Receive Power (dBm)")
+
+    distance_values = []
+    height_values = []
+    rssi_values = []
+    node_ids = []
+
+    for other_node in nodes:
+        if other_node.nodeid == node.nodeid:
+            continue
+        # Calculate 3D distance (but use only 2D distance for x-axis)
+        dist = calc_dist(node.x, other_node.x, node.y, other_node.y, node.z, other_node.z)
+        dist_2d = np.hypot(node.x - other_node.x, node.y - other_node.y)
+        path_loss = phy.estimate_path_loss(conf, dist, conf.FREQ, node.z, other_node.z)
+        rssi = conf.PTX + node.antennaGain + other_node.antennaGain - path_loss
+
+        distance_values.append(dist_2d)
+        height_values.append(other_node.z)
+        rssi_values.append(rssi)
+        node_ids.append(other_node.nodeid)
+
+    distance_values = np.array(distance_values)
+    height_values = np.array(height_values)
+    rssi_values = np.array(rssi_values)
+
+    # Plot the points
+    sc = ax.scatter(distance_values, height_values, rssi_values, c=rssi_values, cmap='viridis', s=50)
+    for d, h, p, nid in zip(distance_values, height_values, rssi_values, node_ids):
+        ax.text(d, h, p, str(nid), fontsize=8)
+
+    # Add a horizontal plane for sensitivity threshold
+    X, Y = np.meshgrid(
+        np.linspace(min(distance_values), max(distance_values), 10),
+        np.linspace(min(height_values), max(height_values), 10)
+    )
+    Z = np.full_like(X, conf.SENSMODEM[conf.MODEM])
+    ax.plot_surface(X, Y, Z, alpha=0.3, color='red', label='Sensitivity Threshold')
+
+    fig.colorbar(sc, ax=ax, label="RSSI (dBm)")
+    return fig, ax
+
+
