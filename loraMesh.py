@@ -152,18 +152,39 @@ if conf.MOVEMENT_ENABLED:
 	gpsEnabled = sum([1 for n in nodes if n.gpsEnabled is True])
 	print("Number of moving nodes w/ GPS:", gpsEnabled)
 
-totalSenserPacketsCreated = sum([n.numberOfSenserPacketsCreated for n in nodes])
 
-totalSenserPacketsReceived = len(nodes[0].SenserPacketsReceived.keys()) # Node 0 is the only one that receives senser packets
 
-extraSenserPackets = [nodes[0].SenserPacketsReceived[p] -1 for p in nodes[0].SenserPacketsReceived.keys() if nodes[0].SenserPacketsReceived[p] > 1]
-print("Total number of senser packets created:", totalSenserPacketsCreated)
-print("Total number of senser packets received:", totalSenserPacketsReceived)
-print("Total number of extra senser packets:", sum(extraSenserPackets))
+totalSensorPacketsCreated = sum([n.numberOfSensorPacketsCreated for n in nodes])
 
-print("reliability of senser packets:", round(totalSenserPacketsReceived / totalSenserPacketsCreated * 100, 2), '%')
+totalSensorPacketsReceived = len(nodes[0].SensorPacketsReceived.keys()) # Node 0 is the only one that receives sensor packets
 
-print("Ratios of unwanted senser packets:", round(sum(extraSenserPackets) / totalSenserPacketsCreated * 100, 2), '%')
+extraSensorPackets = [nodes[0].SensorPacketsReceived[p] -1 for p in nodes[0].SensorPacketsReceived.keys() if nodes[0].SensorPacketsReceived[p] > 1]
+print("Total number of sensor packets created:", totalSensorPacketsCreated)
+print("Total number of sensor packets received:", totalSensorPacketsReceived)
+print("Total number of extra sensor packets:", sum(extraSensorPackets))
+
+print("reliability of sensor packets:", round(totalSensorPacketsReceived / totalSensorPacketsCreated * 100, 2), '%')
+
+print("Ratios of unwanted sensor packets:", round(sum(extraSensorPackets) / totalSensorPacketsCreated * 100, 2), '%')
+
+totalBroadcastPacketsCreated = sum([n.numberOfBroadcastPacketsCreated for n in nodes])
+totalBroadcastPacketsReceived = sum([len(n.BroadcastPacketsReceived.keys()) for n in nodes])
+totalBroadcastPacketsAverage = totalBroadcastPacketsReceived / (len(nodes) - 1) if len(nodes) > 1 else 0
+
+print("Total number of broadcast packets created:", totalBroadcastPacketsCreated)
+print("Total number of broadcast packets received:", totalBroadcastPacketsReceived)
+print("Average number of broadcast packets received per node (except CC):", round(totalBroadcastPacketsAverage, 2))
+print("reliability of broadcast packets:", round(totalBroadcastPacketsAverage / totalBroadcastPacketsCreated * 100, 2), '%')
+
+totalDMPacketsCreated = sum([n.numberOfDMPacketsCreated for n in nodes])
+totalDMPacketsReceived = sum([len(n.DMPacketsReceived.keys()) for n in nodes])
+extraDMPackets = [n.DMPacketsReceived[p]-1 for n in nodes for p in n.DMPacketsReceived.keys() if n.DMPacketsReceived[p] > 1]
+
+print("Total number of DM packets created:", totalDMPacketsCreated)
+print("Total number of DM packets received:", totalDMPacketsReceived)
+print("reliability of DM packets:", round(totalDMPacketsReceived / totalDMPacketsCreated * 100, 2), '%')
+print("Ratios of unwanted DM packets:", round(sum(extraDMPackets) / totalDMPacketsCreated * 100, 2), '%')
+
 
 graph.save()
 
