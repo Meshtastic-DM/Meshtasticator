@@ -121,6 +121,7 @@ nrSensed = sum([1 for p in packets for n in nodes if p.sensedByN[n.nodeid] is Tr
 print("Number of packets sensed:", nrSensed)
 nrReceived = sum([1 for p in packets for n in nodes if p.receivedAtN[n.nodeid] is True])
 print("Number of packets received:", nrReceived)
+print(delays)
 meanDelay = np.nanmean(delays)
 print('Delay average (ms):', round(meanDelay, 2))
 txAirUtilization = sum([n.txAirUtilization for n in nodes])/conf.NR_NODES/conf.SIMTIME*100
@@ -150,6 +151,19 @@ if conf.MOVEMENT_ENABLED:
 	print("Number of moving nodes:", movingNodes)
 	gpsEnabled = sum([1 for n in nodes if n.gpsEnabled is True])
 	print("Number of moving nodes w/ GPS:", gpsEnabled)
+
+totalSenserPacketsCreated = sum([n.numberOfSenserPacketsCreated for n in nodes])
+
+totalSenserPacketsReceived = len(nodes[0].SenserPacketsReceived.keys()) # Node 0 is the only one that receives senser packets
+
+extraSenserPackets = [nodes[0].SenserPacketsReceived[p] -1 for p in nodes[0].SenserPacketsReceived.keys() if nodes[0].SenserPacketsReceived[p] > 1]
+print("Total number of senser packets created:", totalSenserPacketsCreated)
+print("Total number of senser packets received:", totalSenserPacketsReceived)
+print("Total number of extra senser packets:", sum(extraSenserPackets))
+
+print("reliability of senser packets:", round(totalSenserPacketsReceived / totalSenserPacketsCreated * 100, 2), '%')
+
+print("Ratios of unwanted senser packets:", round(sum(extraSenserPackets) / totalSenserPacketsCreated * 100, 2), '%')
 
 graph.save()
 
