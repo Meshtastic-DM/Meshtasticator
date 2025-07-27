@@ -68,12 +68,14 @@ class MeshNode:
 
         self.numberOfSensorPacketsCreated = 0
         self.SensorPacketsReceived = {}
+        self.SensorPacketsAcked ={}
 
         self.numberOfBroadcastPacketsCreated = 0
         self.BroadcastPacketsReceived = {}
 
         self.numberOfDMPacketsCreated = 0
         self.DMPacketsReceived = {}
+        self.DMPacketsAcked ={}
 
         env.process(self.track_channel_utilization(env))
         if (not self.isRepeater) and (not self.isRouter):  # repeaters don't generate messages themselves
@@ -331,7 +333,7 @@ class MeshNode:
                 
                 # Calculate delay only if this message is for you or broadcast
                 if (p.destId == self.nodeid or p.destId == NODENUM_BROADCAST) and not p.isAck :
-                    self.verboseprint('This is a ack', p.isAck)
+                    # self.verboseprint('This is a ack', p.isAck)
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', p.seq, 'with delay', round(self.env.now - p.genTime, 2))
                     self.delays.append(self.env.now - p.genTime)
                     orginTxNodeId = p.origTxNodeId
@@ -351,6 +353,15 @@ class MeshNode:
                         if not p.seq in self.DMPacketsReceived.keys():
                             self.DMPacketsReceived[p.seq] = 0
                         self.DMPacketsReceived[p.seq] += 1
+                elif p.destId == self.nodeid and p.isAck:
+                    if self.simRole == "Sensor":
+                        if not p.seq in self.SensorPacketsAcked.keys():
+                            self.SensorPacketsAcked[p.seq] = 0
+                        self.SensorPacketsAcked[p.seq] += 1
+                    elif self.simRole == "DM":
+                        if not p.seq in self.DMPacketsAcked.keys():
+                            self.DMPacketsAcked[p.seq] = 0
+                        self.DMPacketsAcked[p.seq] += 1 
 
                 # send real ACK if you are the destination and you did not yet send the ACK
                 if p.wantAck and p.destId == self.nodeid and not any(pA.requestId == p.seq for pA in self.packets):

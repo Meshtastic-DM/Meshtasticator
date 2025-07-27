@@ -159,13 +159,16 @@ totalSensorPacketsCreated = sum([n.numberOfSensorPacketsCreated for n in nodes])
 totalSensorPacketsReceived = len(nodes[0].SensorPacketsReceived.keys()) # Node 0 is the only one that receives sensor packets
 
 extraSensorPackets = [nodes[0].SensorPacketsReceived[p] -1 for p in nodes[0].SensorPacketsReceived.keys() if nodes[0].SensorPacketsReceived[p] > 1]
+totalSensorPacketsAcked = sum([len(n.SensorPacketsAcked.keys()) for n in nodes])
 print("Total number of sensor packets created:", totalSensorPacketsCreated)
 print("Total number of sensor packets received:", totalSensorPacketsReceived)
 print("Total number of extra sensor packets:", sum(extraSensorPackets))
+print("Total number of sensor packets acked:", totalSensorPacketsAcked)
 
 print("reliability of sensor packets:", round(totalSensorPacketsReceived / totalSensorPacketsCreated * 100, 2), '%')
 
 print("Ratios of unwanted sensor packets:", round(sum(extraSensorPackets) / totalSensorPacketsCreated * 100, 2), '%')
+print("reliability of sensor packets acked:", round(totalSensorPacketsAcked / totalSensorPacketsCreated * 100, 2), '%')
 
 totalBroadcastPacketsCreated = sum([n.numberOfBroadcastPacketsCreated for n in nodes])
 totalBroadcastPacketsReceived = sum([len(n.BroadcastPacketsReceived.keys()) for n in nodes])
@@ -179,11 +182,15 @@ print("reliability of broadcast packets:", round(totalBroadcastPacketsAverage / 
 totalDMPacketsCreated = sum([n.numberOfDMPacketsCreated for n in nodes])
 totalDMPacketsReceived = sum([len(n.DMPacketsReceived.keys()) for n in nodes])
 extraDMPackets = [n.DMPacketsReceived[p]-1 for n in nodes for p in n.DMPacketsReceived.keys() if n.DMPacketsReceived[p] > 1]
+totalDMPacketsAcked = sum([len(n.DMPacketsAcked.keys()) for n in nodes])
 
 print("Total number of DM packets created:", totalDMPacketsCreated)
 print("Total number of DM packets received:", totalDMPacketsReceived)
+print("Total number of extra DM packets:", sum(extraDMPackets))
+print("Total number of DM packets acked:", totalDMPacketsAcked)
 print("reliability of DM packets:", round(totalDMPacketsReceived / totalDMPacketsCreated * 100, 2), '%')
 print("Ratios of unwanted DM packets:", round(sum(extraDMPackets) / totalDMPacketsCreated * 100, 2), '%')
+print("reliability of DM packets acked:", round(totalDMPacketsAcked / totalDMPacketsCreated * 100, 2), '%')
 
 
 graph.save()
