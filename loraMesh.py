@@ -7,6 +7,7 @@ import yaml
 import simpy
 import numpy as np
 
+from lib import phy
 from lib.common import Graph, plot_schedule, gen_scenario, run_graph_updates, setup_asymmetric_links
 from lib.config import Config
 from lib.discrete_event import BroadcastPipe
@@ -192,6 +193,23 @@ print("reliability of DM packets:", round(totalDMPacketsReceived / totalDMPacket
 print("Ratios of unwanted DM packets:", round(sum(extraDMPackets) / totalDMPacketsCreated * 100, 2), '%')
 print("reliability of DM packets acked:", round(totalDMPacketsAcked / totalDMPacketsCreated * 100, 2), '%')
 
+SensorPacketsDelays =[]
+DMPacketsDelays = []
+ACKPacketsDelays = []
+
+for n in nodes:
+    SensorPacketsDelays.extend(n.SensorPacketsDelays)
+    DMPacketsDelays.extend(n.DMPacketsDelays)
+    ACKPacketsDelays.extend(n.ACKPacketsDelays)
+print(SensorPacketsDelays)
+meanSensorDelay = np.nanmean(SensorPacketsDelays) if SensorPacketsDelays else 0
+meanDMDelay = np.nanmean(DMPacketsDelays) if DMPacketsDelays else 0
+meanACKDelay = np.nanmean(ACKPacketsDelays) if ACKPacketsDelays else 0
+print("Average delay of sensor packets (ms):", round(meanSensorDelay, 2))
+print("Average delay of DM packets (ms):", round(meanDMDelay, 2))
+print("Average delay of ACK packets (ms):", round(meanACKDelay, 2))
+
+print("Range of nodes is",phy.MAXRANGE, "m")
 
 graph.save()
 
