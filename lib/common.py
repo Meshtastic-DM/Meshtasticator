@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from matplotlib.widgets import Button, Slider, RadioButtons, TextBox
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 
 from lib import phy
 
@@ -303,6 +305,14 @@ class Graph:
 		# If you want labels (text annotations) also updated:
 		self.node_labels = {}
 
+		legend_elements = [
+			Patch(facecolor='red', edgecolor='red', alpha=0.7, label='Router Nodes'),
+			Patch(facecolor='blue', edgecolor='blue', alpha=0.7, label='Direct Messaging (DM) Nodes'),
+			Patch(facecolor='green', edgecolor='green', alpha=0.7, label='Control Center'),
+			Patch(facecolor='black', edgecolor='black', alpha=0.7, label='Sensor Nodes'),
+		]
+		self.ax.legend(handles=legend_elements, loc='upper right')
+
 	def update_positions(self, nodes):
 		for node in nodes:
 			node_id = node.nodeid
@@ -330,19 +340,27 @@ class Graph:
 		if not self.conf.RANDOM:
 			txt = self.ax.annotate(str(node.nodeid), (node.x - 5, node.y + 5))
 			self.node_labels[node.nodeid] = txt
+		
+		if node.simRole == "Router":
+			color = 'red'
+		elif node.simRole == "DM":
+			color = 'blue'
+		elif node.simRole == "Control_Center":
+			color = 'green'
+		else:
+			color = 'black'
 
 		# Plot the node marker
 		(marker,) = self.ax.plot(
 			node.x, node.y,
-			marker="o", markersize=2.5, color="grey"
+			marker="o", markersize=7.5, color=color
 		)
 		self.node_markers[node.nodeid] = marker
 
-		# Plot the coverage circle
 		circle = plt.Circle(
 			(node.x, node.y),
 			radius=phy.MAXRANGE,
-			color=plt.cm.Set1(node.nodeid),
+			color=color,
 			alpha=0.1
 		)
 		self.ax.add_patch(circle)

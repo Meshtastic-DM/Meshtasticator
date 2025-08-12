@@ -1,107 +1,298 @@
 0:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: false
-  neighborInfo: false
   x: 0.0
   y: 0.0
   z: 1.0
   simRole: "Control_Center"
-
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
 1:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: false
-  neighborInfo: false
-  x: 500.0
-  y: 300.0
-  z: 1.0
-  simRole: "Sensor"
-
-2:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: false
-  neighborInfo: false
-  x: 1500.0
-  y: 800.0
-  z: 1.0
-  simRole: "Sensor"
-
-3:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: false
-  neighborInfo: false
-  x: -700.0
-  y: -1000.0
-  z: 1.0
-  simRole: "Sensor"
-
-4:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: true
-  neighborInfo: false
-  x: 800.0
-  y: 400.0
-  z: 2.0
-  simRole: "Router"
-
-5:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: true
-  neighborInfo: false
-  x: -300.0
-  y: -600.0
-  z: 2.0
-  simRole: "Router"
-
-6:
-  antennaGain: 0.0
-  hopLimit: 3
-  isClientMute: false
-  isRepeater: false
-  isRouter: false
-  neighborInfo: false
   x: 500.0
   y: -700.0
   z: 1.0
   simRole: "DM"
-
-7:
   antennaGain: 0.0
   hopLimit: 3
   isClientMute: false
   isRepeater: false
   isRouter: false
   neighborInfo: false
+
+2:
   x: -1000.0
   y: 0.0
   z: 1.0
   simRole: "DM"
-
-8:
   antennaGain: 0.0
   hopLimit: 3
   isClientMute: false
   isRepeater: false
   isRouter: false
   neighborInfo: false
+
+3:
   x: -100.0
   y: 1000.0
   z: 1.0
   simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+4:
+  x: 1000.0
+  y: 200.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+5:
+  x: -1200.0
+  y: 600.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+6:
+  x: 200.0
+  y: -1000.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+7:
+  x: 1995.0
+  y: 1295.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+8:
+  x: -1500.0
+  y: -300.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+9:
+  x: 400.0
+  y: 1300.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+10:
+  x: -900.0
+  y: -1100.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+11:
+  x: 1300.0
+  y: -300.0
+  z: 1.0
+  simRole: "DM"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+12:
+  x: 500.0
+  y: 300.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+13:
+  x: 1500.0
+  y: 800.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+14:
+  x: -700.0
+  y: -1000.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+15:
+  x: -800.0
+  y: 900.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+16:
+  x: 300.0
+  y: 600.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+17:
+  x: -500.0
+  y: -300.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+18:
+  x: 100.0
+  y: 900.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+19:
+  x: -1100.0
+  y: -500.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+20:
+  x: 700.0
+  y: -300.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+21:
+  x: -200.0
+  y: 300.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+22:
+  x: 0.0
+  y: -1300.0
+  z: 1.0
+  simRole: "Sensor"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+
+23:
+  x: 800.0
+  y: 400.0
+  z: 2.0
+  simRole: "Router"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: true
+  neighborInfo: false
+
+24:
+  x: -300.0
+  y: -600.0
+  z: 2.0
+  simRole: "Router"
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: true
+  neighborInfo: false

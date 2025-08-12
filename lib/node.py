@@ -66,19 +66,21 @@ class MeshNode:
         self.channelUtilizationIndex = 0  # which "bucket" is current
         self.prevTxAirUtilization = 0.0   # how much total tx air-time had been used at last sample
 
-        self.numberOfSensorPacketsCreated = 0
+        self.numberOfSensorPacketsCreated = {}
         self.SensorPacketsReceived = {}
+        self.SensorPacketsReceivedOrigId={}
         self.SensorPacketsAcked ={}
-        self.SensorPacketsDelays=[]
+        self.SensorPacketsDelays={}
 
         self.numberOfBroadcastPacketsCreated = 0
         self.BroadcastPacketsReceived = {}
-        self.BroadcastPacketsDelays =[]
+        self.BroadcastPacketsDelays ={}
 
-        self.numberOfDMPacketsCreated = 0
+        self.numberOfDMPacketsCreated = {}
         self.DMPacketsReceived = {}
         self.DMPacketsAcked ={}
-        self.DMPacketsDelays = []
+        self.DMPacketsDelays = {}
+        self.DMPacketsReceivedOrigId = {}
 
         self.ACKPacketsDelays = []
 
@@ -196,26 +198,30 @@ class MeshNode:
         while True:
                 
             if self.simRole == "Sensor":
-                nextGen = self.get_next_time(250*1000)
+                nextGen = self.get_next_time(4*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
                 destId = 0
-                self.numberOfSensorPacketsCreated += 1
+                if not destId in self.numberOfSensorPacketsCreated.keys():
+                    self.numberOfSensorPacketsCreated[destId] = 0
+                self.numberOfSensorPacketsCreated[destId] += 1
             elif self.simRole == "Control_Center":
-                nextGen = self.get_next_time(120*1000)
+                nextGen = self.get_next_time(10*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
                 destId = NODENUM_BROADCAST
                 self.numberOfBroadcastPacketsCreated += 1
             elif self.simRole == "DM":
-                nextGen = self.get_next_time(120*1000)
+                nextGen = self.get_next_time(3*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
-                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if (self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center")])
-                self.numberOfDMPacketsCreated += 1
+                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if ((self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center")) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
+                if not destId in self.numberOfDMPacketsCreated.keys():
+                    self.numberOfDMPacketsCreated[destId] = 0
+                self.numberOfDMPacketsCreated[destId] += 1
             p = self.send_packet(destId)
             while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
                 retransmissionMsec = get_retransmission_msec(self, p)
@@ -350,19 +356,33 @@ class MeshNode:
                             break
                     if orginTxNode.simRole == "Sensor":
                         if not p.seq in self.SensorPacketsReceived.keys():
-                            self.SensorPacketsReceived[p.seq][p.origTxNodeId] = 0
-                            self.SensorPacketsDelays.append(self.env.now - p.genTime)
-                        self.SensorPacketsReceived[p.seq][p.origTxNodeId] += 1
+                            self.SensorPacketsReceived[p.seq] = 0
+                            if not p.origTxNodeId in self.SensorPacketsReceivedOrigId.keys():
+                                self.SensorPacketsReceivedOrigId[p.origTxNodeId] = {}
+                            self.SensorPacketsReceivedOrigId[p.origTxNodeId][p.seq] = 0
+                            if not p.origTxNodeId in self.SensorPacketsDelays.keys():
+                                self.SensorPacketsDelays[p.origTxNodeId] = []
+                            self.SensorPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
+                        self.SensorPacketsReceived[p.seq] += 1
+                        self.SensorPacketsReceivedOrigId[p.origTxNodeId][p.seq] += 1
                     elif orginTxNode.simRole == "Control_Center":
                         if not p.seq in self.BroadcastPacketsReceived.keys():
                             self.BroadcastPacketsReceived[p.seq] = 0
-                            self.BroadcastPacketsDelays.append(self.env.now - p.genTime)
+                            if not p.origTxNodeId in self.BroadcastPacketsDelays.keys():
+                                self.BroadcastPacketsDelays[p.origTxNodeId] = []
+                            self.BroadcastPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
                         self.BroadcastPacketsReceived[p.seq] += 1
                     elif orginTxNode.simRole == "DM":
                         if not p.seq in self.DMPacketsReceived.keys():
                             self.DMPacketsReceived[p.seq] = 0
-                            self.DMPacketsDelays.append(self.env.now - p.genTime)
+                            if not p.origTxNodeId in self.DMPacketsReceivedOrigId.keys():
+                                self.DMPacketsReceivedOrigId[p.origTxNodeId] = {}
+                            self.DMPacketsReceivedOrigId[p.origTxNodeId][p.seq] = 0
+                            if not p.origTxNodeId in self.DMPacketsDelays.keys():
+                                self.DMPacketsDelays[p.origTxNodeId] = []
+                            self.DMPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
                         self.DMPacketsReceived[p.seq] += 1
+                        self.DMPacketsReceivedOrigId[p.origTxNodeId][p.seq] += 1
                 elif p.destId == self.nodeid and p.isAck:
                     if self.simRole == "Sensor":
                         if not p.seq in self.SensorPacketsAcked.keys():
