@@ -414,5 +414,100 @@ class MeshNode:
                             pNew.hopLimit = p.hopLimit - 1
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
+                    if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.TABLE_ROUTE:
+                        table = {
+                                (1, 2): [0],
+                                (1, 3): [12],
+                                (1, 4): [11],
+                                (1, 5): [0, 2],
+                                (1, 6): [],
+                                (1, 7): [0, 23, 13],
+                                (1, 8): [0, 2],
+                                (1, 9): [0, 16],
+                                (1, 10): [22],
+                                (1, 11): [],
+                                (2, 3): [15],
+                                (2, 4): [0, 12],
+                                (2, 5): [],
+                                (2, 6): [17],
+                                (2, 7): [0, 23, 13],
+                                (2, 8): [],
+                                (2, 9): [0, 16],
+                                (2, 10): [8],
+                                (2, 11): [0, 1],
+                                (3, 4): [12],
+                                (3, 5): [15],
+                                (3, 6): [12, 1],
+                                (3, 7): [9, 23, 13],
+                                (3, 8): [15, 2],
+                                (3, 9): [],
+                                (3, 10): [21, 17],
+                                (3, 11): [12],
+                                (4, 5): [12, 0, 2],
+                                (4, 6): [20],
+                                (4, 7): [13],
+                                (4, 8): [12, 0, 2],
+                                (4, 9): [16],
+                                (4, 10): [11, 1, 22],
+                                (4, 11): [],
+                                (5, 6): [8, 17],
+                                (5, 7): [2, 0, 23, 13],
+                                (5, 8): [],
+                                (5, 9): [15, 3],
+                                (5, 10): [8],
+                                (5, 11): [2, 0, 1],
+                                (6, 7): [20, 4, 13],
+                                (6, 8): [17],
+                                (6, 9): [20, 16],
+                                (6, 10): [14],
+                                (6, 11): [1],
+                                (7, 8): [13, 23, 0, 2],
+                                (7, 9): [13, 23],
+                                (7, 10): [13, 23, 0, 17],
+                                (7, 11): [13, 4],
+                                (8, 9): [2, 0, 16],
+                                (8, 10): [],
+                                (8, 11): [2, 0, 1],
+                                (9, 10): [16, 0, 17],
+                                (9, 11): [23],
+                                (10, 11): [22, 1],
+                                (12, 0): [],
+                                (13, 0): [12],
+                                (14, 0): [24],
+                                (15, 0): [21],
+                                (16, 0): [],
+                                (17, 0): [],
+                                (18, 0): [16],
+                                (19, 0): [17],
+                                (20, 0): [12],
+                                (21, 0): [],
+                                (22, 0): [24],
+                                }
+                        if (p.origTxNodeId, p.destId) in table:
+                            nextHops = table[(p.origTxNodeId, p.destId)]
+                            if self.nodeid in nextHops:
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', p.seq, 'to next hop', nextHops)
+                                pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                                pNew.hopLimit = p.hopLimit - 1
+                                self.packets.append(pNew)
+                                self.env.process(self.transmit(pNew))
+                            else:
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'ignores received packet', p.seq, 'not in next hops')                          
+                        elif (p.destId, p.origTxNodeId) in table:
+                            nextHops = table[(p.destId, p.origTxNodeId)]
+                            if self.nodeid in nextHops:
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', p.seq, 'to next hop', nextHops)
+                                pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                                pNew.hopLimit = p.hopLimit - 1
+                                self.packets.append(pNew)
+                                self.env.process(self.transmit(pNew))
+                            else:
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'ignores received packet', p.seq, 'not in next hops')
+                        else:
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', p.seq)
+                            pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                            pNew.hopLimit = p.hopLimit - 1
+                            self.packets.append(pNew)
+                            self.env.process(self.transmit(pNew))
                 else:
                     self.droppedByDelay += 1
