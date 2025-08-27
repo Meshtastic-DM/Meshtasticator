@@ -6,6 +6,8 @@ import time
 import yaml
 import os
 from shutil import which
+import subprocess
+from pathlib import Path
 
 import google.protobuf.json_format as proto
 from matplotlib import patches
@@ -26,7 +28,8 @@ TCP_PORT_CLIENT = 4402
 MAX_TO_FROM_RADIO_SIZE = 512
 DEVICE_SIM_DOCKER_IMAGE = "meshtastic/device-simulator"
 MESHTASTICD_PATH_DOCKER = "./meshtasticd"
-
+LOG_DIR = Path(__file__).resolve().parent.parent / "out"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 class InteractiveNode:
     def __init__(self, nodes, nodeId, hwId, TCPPort, nodeConfig):
@@ -414,33 +417,52 @@ class InteractiveSim:
                 print(f"Docker container with name {self.container.name} is started.")
                 print(f"You can check the device logs using 'docker exec -it {self.container.name} cat /home/out_x.log', where x is the node number.")
         else:
-            # run nodes natively (not in docker)
-            for n in self.nodes:  # [1:]
-                call = []
-                if which('gnome-terminal') is not None:
-                    call += ["gnome-terminal",
-                             f"--title='Node {n.nodeid}'",
-                             "--"]
-                elif which('xterm') is not None:
-                    call += ["xterm",
-                             f"-title 'Node {n.nodeid}'",
-                             "-e"]
-                else:
-                    print('The interactive simulator on native Linux (without Docker) requires either gnome-terminal or xterm.')
-                    exit(1)
 
+            # clean old logs from previous runs
+            for old in LOG_DIR.glob("node*.log"):
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
+
+            # run nodes natively (not in docker) — headless, no GUI terminals required
+            self._procs = []  # keep refs so logs don’t get GC’d
+            for n in self.nodes:
                 # executable
-                call += [os.path.join(args.program, 'program')]
+                exe = os.path.join(args.program, 'program')  # here -p is the DIRECTORY (build/native)
                 # node parameters
-                call += [f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid}",
-                         f"-h {n.hwId}",
-                         f"-p {n.TCPPort}"]
+                cmd = [
+                    exe,
+                    "-d", f"{os.path.expanduser('~')}/.portduino/node{n.nodeid}",
+                    "-h", str(n.hwId),
+                    "-p", str(n.TCPPort),
+                ]
                 if self.removeConfig:
-                    call.append("-e")
-                call.append("&")
-                os.system(" ".join(call))
+                    cmd.append("-e")
+
+                # env: force headless (WSL/CI safe)
+                env = os.environ.copy()
+                env.setdefault("PORTDUINO_HEADLESS", "1")
+                env.setdefault("SDL_AUDIODRIVER", "dummy")
+
+                # per-node log
+                log_path = LOG_DIR / f"node{n.nodeid}.log"
+                log = open(log_path, "wb")
+
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=env
+                )
+                # keep refs on the node so we can clean up later
+                n._proc = proc
+                n._log = log
+                print(f"[spawn] node{n.nodeid} pid={proc.pid} → {log_path}")
+
                 if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
-                    time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
+                    time.sleep(2)  # slight stagger to avoid bursts
+
 
     def init_forward(self):
         if self.forwardToClient:
