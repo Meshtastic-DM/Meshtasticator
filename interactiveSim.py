@@ -58,3 +58,5 @@ if sim.script:  # Use '-s' as argument if you want to specify what you want to s
         sim.graph.init_routes(sim)
 else:  # Normal usage with commands
     CommandProcessor().cmdloop(sim)
+
+    
