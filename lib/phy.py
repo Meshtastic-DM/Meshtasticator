@@ -1,5 +1,6 @@
 import math
 import random
+import numpy as np
 
 from scipy.optimize import fsolve
 
@@ -156,6 +157,27 @@ def estimate_path_loss(conf, dist, freq, txZ=conf.HM, rxZ=conf.HM):
         Lpl = (44.9 - 6.55 * math.log10(rxZ)) * (math.log10(dist) - 3.0) \
             + 45.5 + (35.46 - 1.1 * txZ) * (math.log10(freq) - 6.0) \
             - 13.82 * math.log10(txZ) + 0.7 * txZ + C
+    
+    elif conf.MODEL == 7:
+
+        # PL(d) = PL(d0) + 10*alpha*log10(d/d0) + X_sigma, X_sigma ~ N(0, sigma^2)
+        d0     = 190.0
+        PLd0   = 96.0
+        alpha  = 3.3
+        sigma  = 3.5
+
+        # Deterministic part
+        Lpl_det = PLd0 + 10.0 * alpha * math.log10(dist / d0)
+
+        # Shadowing term (dB)
+        # 'per_packet' redrawing (stateless). If you later want per-link caching,
+        # we can refactor to pass tx/rx IDs and memoize X_sigma for (tx->rx).
+        X_sigma = float(np.random.normal(loc=0.0, scale=sigma))
+
+        Lpl = Lpl_det + X_sigma
+
+    else:
+        raise ValueError(f"Unknown path loss model: {conf.MODEL}")
 
     return Lpl
 
