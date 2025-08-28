@@ -6,8 +6,10 @@ import time
 import yaml
 import os
 from shutil import which
+
 import subprocess
 from pathlib import Path
+
 
 import google.protobuf.json_format as proto
 from matplotlib import patches
@@ -580,14 +582,14 @@ class InteractiveSim:
         except Exception:
             return None
 
-    def show_nodes(self, id=None):
+    def showNodes(self, id=None):
         if id is not None:
             print('NodeDB as seen by node', id)
-            self.nodes[id].iface.show_nodes()
+            self.nodes[id].iface.showNodes()
         else:
             for n in self.nodes:
                 print('NodeDB as seen by node', n.nodeid)
-                n.iface.show_nodes()
+                n.iface.showNodes()
 
     def send_broadcast(self, text, fromNode):
         self.get_node_iface_by_id(fromNode).sendText(text)
@@ -850,7 +852,7 @@ class CommandProcessor(cmd.Cmd):
             if self.sim.get_node_iface_by_id(n) is None:
                 print(f'Node ID {n} is not in the list of nodes.')
                 continue
-            self.sim.show_nodes(int(n))
+            self.sim.showNodes(int(n))
 
     def do_remove(self, line):
         """remove <id>
