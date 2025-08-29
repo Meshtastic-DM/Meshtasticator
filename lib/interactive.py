@@ -510,6 +510,17 @@ class InteractiveSim:
             sys.exit(1)
 
 
+    
+    def _dump_threads():
+        print("=== THREAD DUMP ===")
+        frames = sys._current_frames()
+        for t in threading.enumerate():
+            fid = getattr(t, "ident", None)
+            print(f"\n--- {t.name} ({fid}) ---")
+            tb = frames.get(fid)
+            if tb:
+                traceback.print_stack(tb)
+        print("=== END DUMP ===")
  
 
     def _safe_close_iface(n, timeout=2.5):
@@ -565,14 +576,7 @@ class InteractiveSim:
         print("[reconnect] starting...")
         time.sleep(3)
 
-        # (optional) unsubscribe before teardown to avoid re-entrant callbacks
-        try:
-            pub.unsubscribe(self.on_receive, "meshtastic.receive.simulator")
-            pub.unsubscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
-            if self.forwardToClient:
-                pub.unsubscribe(self.on_receive_all, "meshtastic.receive")
-        except Exception:
-            pass
+        
 
         print("[reconnect] closing existing interfaces...")
         for n in self.nodes[int(self.forwardToClient):]:
@@ -612,14 +616,7 @@ class InteractiveSim:
                 print(f"[reconnect] emulateCollisions ON, sleeping before next node (id {n.nodeid})")
                 time.sleep(2)
 
-        # (optional) re-subscribe after reconnection
-        try:
-            pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
-            pub.subscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
-            if self.forwardToClient:
-                pub.subscribe(self.on_receive_all, "meshtastic.receive")
-        except Exception:
-            pass
+        
 
         print("[reconnect] finished successfully")
 
