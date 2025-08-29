@@ -510,17 +510,6 @@ class InteractiveSim:
             sys.exit(1)
 
 
-    
-    def _dump_threads():
-        print("=== THREAD DUMP ===")
-        frames = sys._current_frames()
-        for t in threading.enumerate():
-            fid = getattr(t, "ident", None)
-            print(f"\n--- {t.name} ({fid}) ---")
-            tb = frames.get(fid)
-            if tb:
-                traceback.print_stack(tb)
-        print("=== END DUMP ===")
  
 
     def _safe_close_iface(n, timeout=2.5):
