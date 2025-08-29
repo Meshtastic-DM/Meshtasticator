@@ -511,7 +511,7 @@ class InteractiveSim:
 
  
 
-    def _safe_close_iface(n, timeout=2.5):
+    def _safe_close_iface(self, n, timeout=2.5):
         """
         Attempt to close n.iface without hanging. Returns True if close finished within timeout.
         Works even if the iface has a blocking recv() by trying to stop the reader and shutdown the socket first.
@@ -577,7 +577,7 @@ class InteractiveSim:
         for n in self.nodes[int(self.forwardToClient):]:
             try:
                 print(f"[reconnect] closing iface for node {n.nodeid} (port {n.TCPPort})")
-                ok = _safe_close_iface(n)
+                ok = self._safe_close_iface(n)
                 # mark iface None so subsequent logic won’t touch a half-closed object
                 n.iface = None
                 if ok:
