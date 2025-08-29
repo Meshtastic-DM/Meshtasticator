@@ -463,46 +463,179 @@ class InteractiveSim:
 
     def init_communication(self, iface0):
         try:
+            print("[init_com] starting…")
+            
+            # 1. Create TCP interfaces for all nodes
             for n in self.nodes[int(self.forwardToClient):]:
+                print(f"[init_com] setting up TCPInterface for node {n.nodeid} on port {n.TCPPort}")
                 iface = tcp_interface.TCPInterface(hostname="localhost", portNumber=n.TCPPort)
                 n.add_interface(iface)
+            print("[init_com] all node TCPInterfaces added")
+
+            # 2. Forward-to-client special handling
             if self.forwardToClient:
+                print("[init_com] forwardToClient is enabled, connecting iface0…")
                 self.clientConnected = True
                 iface0.localNode.nodeNum = self.nodes[0].hwId
+                print("[init_com] calling iface0.connect() …")
                 iface0.connect()  # real connection now
+                print("[init_com] iface0.connect() done")
+
+            # 3. Configure nodes
+            print("[init_com] setting configs for nodes…")
             for n in self.nodes:
+                print(f"[init_com] calling set_config() on node {n.nodeid}")
                 requiresReboot = n.set_config()
                 if requiresReboot and self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
-                    time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
+                    print(f"[init_com] node {n.nodeid} requires reboot, sleeping to avoid collisions")
+                    time.sleep(2)
+            print("[init_com] finished set_config for all nodes")
+
+            # 4. Reconnect logic
+            print("[init_com] calling reconnect_nodes() …")
             self.reconnect_nodes()
+            print("[init_com] reconnect_nodes() finished")
+
+            # 5. Subscribe to pubsub events
+            print("[init_com] subscribing to pubsub events…")
             pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
             pub.subscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
             if self.forwardToClient:
                 pub.subscribe(self.on_receive_all, "meshtastic.receive")
+            print("[init_com] pubsub subscriptions complete")
+
         except Exception as ex:
-            print(f"Error: Could not connect to native program: {ex}")
+            print(f"[init_com] Error: Could not connect to native program: {ex}")
             self.close_nodes()
             sys.exit(1)
 
+
+    
+    def _dump_threads():
+        print("=== THREAD DUMP ===")
+        frames = sys._current_frames()
+        for t in threading.enumerate():
+            fid = getattr(t, "ident", None)
+            print(f"\n--- {t.name} ({fid}) ---")
+            tb = frames.get(fid)
+            if tb:
+                traceback.print_stack(tb)
+        print("=== END DUMP ===")
+ 
+
+    def _safe_close_iface(n, timeout=2.5):
+        """
+        Attempt to close n.iface without hanging. Returns True if close finished within timeout.
+        Works even if the iface has a blocking recv() by trying to stop the reader and shutdown the socket first.
+        """
+        iface = getattr(n, "iface", None)
+        if not iface:
+            return True
+
+        # 1) Try to signal any reader loop to stop, if available
+        try:
+            if hasattr(iface, "stop"):
+                iface.stop()
+            if hasattr(iface, "_stop_event"):
+                iface._stop_event.set()
+        except Exception:
+            pass
+
+        # 2) Try to shutdown the underlying socket to break out of recv()
+        try:
+            sock = getattr(iface, "sock", None) or getattr(iface, "_sock", None)
+            if sock:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass  # already closed / not a raw socket
+        except Exception:
+            pass
+
+        # 3) Call close() in a background thread with a timeout
+        done = threading.Event()
+
+        def _do_close():
+            try:
+                iface.close()
+            except Exception:
+                pass
+            finally:
+                done.set()
+
+        t = threading.Thread(target=_do_close, daemon=True)
+        t.start()
+        ok = done.wait(timeout)
+
+        return ok
+
+
+
+
     def reconnect_nodes(self):
+        print("[reconnect] starting...")
         time.sleep(3)
+
+        # (optional) unsubscribe before teardown to avoid re-entrant callbacks
+        try:
+            pub.unsubscribe(self.on_receive, "meshtastic.receive.simulator")
+            pub.unsubscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
+            if self.forwardToClient:
+                pub.unsubscribe(self.on_receive_all, "meshtastic.receive")
+        except Exception:
+            pass
+
+        print("[reconnect] closing existing interfaces...")
         for n in self.nodes[int(self.forwardToClient):]:
             try:
-                n.iface.close()
+                print(f"[reconnect] closing iface for node {n.nodeid} (port {n.TCPPort})")
+                
+                ok = self._safe_close_iface(n)
+                # mark iface None so subsequent logic won’t touch a half-closed object
                 n.iface = None
-            except OSError:
-                pass
+                if ok:
+                    print(f"[reconnect] iface closed for node {n.nodeid}")
+                else:
+                    print(f"[reconnect] timeout: close() hung for node {n.nodeid}; skipping")
+            except Exception as e:
+                print(f"[reconnect] Unexpected error while closing node {n.nodeid}: {e}")
+
+        print("[reconnect] sleeping 5s before reconnect attempts...")
         time.sleep(5)
+
+        print("[reconnect] attempting to reconnect nodes...")
         for n in self.nodes:
+            print(f"[reconnect] starting reconnect loop for node {n.nodeid} (port {n.TCPPort})")
             while not n.iface:
                 try:
+                    print(f"[reconnect] trying TCPInterface for node {n.nodeid} on port {n.TCPPort}")
                     iface = tcp_interface.TCPInterface(hostname="localhost", portNumber=n.TCPPort)
                     n.add_interface(iface)
-                except OSError:
-                    print("Trying to reconnect to node...")
+                    print(f"[reconnect] SUCCESS node {n.nodeid} now has iface")
+                except OSError as e:
+                    print(f"[reconnect] OSError: port {n.TCPPort} not ready yet for node {n.nodeid}: {e}")
                     time.sleep(1)
-            if self.emulateCollisions and n.nodeid != len(self.nodes)-1:
-                time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
+                except Exception as e:
+                    print(f"[reconnect] Unexpected error for node {n.nodeid}: {e}")
+                    time.sleep(1)
+
+            if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
+                print(f"[reconnect] emulateCollisions ON, sleeping before next node (id {n.nodeid})")
+                time.sleep(2)
+
+        # (optional) re-subscribe after reconnection
+        try:
+            pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
+            pub.subscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
+            if self.forwardToClient:
+                pub.subscribe(self.on_receive_all, "meshtastic.receive")
+        except Exception:
+            pass
+
+        print("[reconnect] finished successfully")
+
+
+
 
     @staticmethod
     def packet_from_packet(packet, data, portnum):
