@@ -679,7 +679,7 @@ class InteractiveSim:
         except Exception:
             return None
 
-    def showNodes(self, id=None):
+    def show_nodes(self, id=None):
         if id is not None:
             print('NodeDB as seen by node', id)
             self.nodes[id].iface.showNodes()
@@ -949,7 +949,7 @@ class CommandProcessor(cmd.Cmd):
             if self.sim.get_node_iface_by_id(n) is None:
                 print(f'Node ID {n} is not in the list of nodes.')
                 continue
-            self.sim.showNodes(int(n))
+            self.sim.show_nodes(int(n))
 
     def do_remove(self, line):
         """remove <id>
