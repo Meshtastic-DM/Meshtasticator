@@ -157,6 +157,18 @@ def estimate_path_loss(conf, dist, freq, txZ=conf.HM, rxZ=conf.HM):
             + 45.5 + (35.46 - 1.1 * txZ) * (math.log10(freq) - 6.0) \
             - 13.82 * math.log10(txZ) + 0.7 * txZ + C
 
+    elif conf.MODEL == 7:
+
+        LPLD0 = 96      # PL(d0) at reference distance (dB)
+        D0 = 190        # reference distance d0 (m)
+        GAMMA = 3.3     # path loss exponent α
+        SIGMA = 3.5     # shadowing std dev σ (dB)
+
+        # Deterministic log-distance component
+        Lpl = LPLD0 + 10 * GAMMA * math.log10(dist / D0)
+        # Add Gaussian shadow fading N(0, SIGMA^2)
+        Lpl += random.gauss(0, SIGMA)
+
     return Lpl
 
 
@@ -165,3 +177,4 @@ def zero_link_budget(dist):
 
 
 MAXRANGE = fsolve(zero_link_budget, 1500)
+print(MAXRANGE)  # in meters

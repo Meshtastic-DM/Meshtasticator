@@ -8,15 +8,15 @@ class Config:
         MANAGED_FLOOD = 'MANAGED_FLOOD'
 
     def __init__(self):
-        self.MODEL = 5  # Path loss model to use (see README)
+        self.MODEL = 4  # Path loss model to use (see README)
 
-        self.XSIZE = 15000  # horizontal size of the area to simulate in m
-        self.YSIZE = 15000  # vertical size of the area to simulate in m
+        self.XSIZE = 90000  # horizontal size of the area to simulate in m
+        self.YSIZE = 90000  # vertical size of the area to simulate in m
         self.OX = 0.0  # origin x-coordinate
         self.OY = 0.0  # origin y-coordinate
         self.MINDIST = 10  # minimum distance between each node in the area in m
 
-        self.GL = 0  # antenna gain of each node in dBi
+        self.GL = 2  # antenna gain of each node in dBi
         self.HM = 1.0  # height of each node in m
 
         ### Meshtastic specific ###
@@ -31,7 +31,7 @@ class Config:
         self.ONE_HR_INTERVAL = self.ONE_MIN_INTERVAL * 60
 
         ### Discrete-event specific ###
-        self.MODEM = 4  # LoRa modem to use: 0 = ShortFast, 1 = Short Slow, ... 7 = Very Long Slow (default 4 is LongFast)
+        self.MODEM = 1  # LoRa modem to use: 0 = ShortFast, 1 = Short Slow, ... 7 = Very Long Slow (default 4 is LongFast)
         self.PERIOD = 100 * self.ONE_SECOND_INTERVAL  # mean period of generating a new message with exponential distribution in ms
         self.PACKETLENGTH = 40  # payload in bytes
         self.SIMTIME = 30 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
@@ -44,7 +44,7 @@ class Config:
             "EU433": {"freq_start": 433e6, "freq_end": 434e6, "power_limit": 12},
             "EU868": {"freq_start": 868e6, "freq_end": 868e6, "power_limit": 27},
         }
-        self.REGION = self.regions["US"]  # Select a different region here
+        self.REGION = self.regions["EU868"]  # Select a different region here
         self.CHANNEL_NUM = 27  # Channel number
         ### End of discrete-event specific ###
 
