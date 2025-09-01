@@ -46,3 +46,4 @@ nodeLanguageServer.*/**
 dist/**
 program
 venv
+plots
