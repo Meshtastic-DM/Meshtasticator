@@ -30,6 +30,8 @@ if sim.script:  # Use '-s' as argument if you want to specify what you want to s
 
         """ Broadcast Message from node 0. """
         sim.send_broadcast("Hi all", fromNode)
+        time.sleep(30)
+        sim.send_broadcast("Hi all", fromNode)
 
         """ Direct Message from node 0 to node 1. """
         # sim.sendDM("Hi node 0", fromNode, toNode)
@@ -50,7 +52,7 @@ if sim.script:  # Use '-s' as argument if you want to specify what you want to s
         """ Send a position request from node 0 to node 1. """
         # sim.requestPosition(fromNode, toNode)
 
-        time.sleep(15)  # Wait until messages are sent
+        time.sleep(30)  # Wait until messages are sent
         sim.graph.plot_metrics(sim.nodes)  # Plot airtime metrics
         sim.graph.init_routes(sim)  # Visualize the route of messages sent
     except KeyboardInterrupt:

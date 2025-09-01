@@ -136,6 +136,9 @@ class InteractivePacket:
         self.packet = packet
         self.localId = id
 
+        self.tx_time = None            # float epoch seconds for original send
+        self.rx_times = {} 
+
     def setTxRxs(self, transmitter, receivers):
         self.transmitter = transmitter
         self.receivers = receivers
@@ -373,6 +376,32 @@ class InteractiveSim:
         self.init_nodes(args)
         iface0 = self.init_forward()
         self.init_communication(iface0)
+
+        # --- NEW: radius/targets bookkeeping ---
+    RADIUS_DEFAULT_M = 30000  # 30 km
+
+    def _dist_2d(self, a, b):
+        # if your calc_dist is truly 3D meters already, you can use that instead
+        dx = a.x - b.x
+        dy = a.y - b.y
+        return (dx*dx + dy*dy) ** 0.5
+
+    def _target_nodes_for_radius(self, origin_node, radius_m):
+        # all nodes (except origin) within radius of the original sender
+        return {n.nodeid for n in self.nodes
+                if n.nodeid != origin_node.nodeid and self._dist_2d(origin_node, n) <= radius_m}
+
+    def _ensure_msg_bookkeeping(self, mId):
+        # lazy-init dicts for this messageId
+        if not hasattr(self, "_msg_origin"):
+            self._msg_origin = {}
+        if not hasattr(self, "_msg_targets"):
+            self._msg_targets = {}
+        if not hasattr(self, "_msg_rx_first"):
+            self._msg_rx_first = {}   # mId -> {nodeid: first_rx_time}
+
+        self._msg_rx_first.setdefault(mId, {})
+
 
     def init_nodes(self, args):
         if self.docker:
@@ -730,9 +759,59 @@ class InteractiveSim:
     def send_from_to(self, fromNode, toNode):
         return self.get_node_iface_by_id(fromNode).getNode(self.node_id_to_dest(toNode))
 
+
+
+    # --- NEW: compute/print reach time for a given messageId & radius ---
+    def print_reach_time(self, messageId, radius_km=None):
+        if not hasattr(self, "_msg_origin") or messageId not in self._msg_origin:
+            print(f"[reach] No origin found for message {messageId}. Are you sure this messageId exists?")
+            return
+
+        origin = self._msg_origin[messageId]
+        tx_time = None
+        for p in self.messages:
+            if p.localId == messageId and p.tx_time is not None:
+                tx_time = p.tx_time
+                break
+
+        if tx_time is None:
+            print(f"[reach] Could not find TX time for message {messageId}")
+            return
+
+        # Optionally recompute the target set for a different radius_km
+        if radius_km is not None:
+            radius_m = float(radius_km) * 1000.0
+            targets = self._target_nodes_for_radius(origin, radius_m)
+        else:
+            targets = self._msg_targets.get(messageId, set())
+
+        rx_first = self._msg_rx_first.get(messageId, {})
+        reached = targets.intersection(rx_first.keys())
+        missing = targets.difference(reached)
+
+        total = len(targets)
+        if total == 0:
+            print(f"[reach] No nodes within radius for message {messageId}.")
+            return
+
+        if missing:
+            # not all reached yet
+            covered = len(reached)
+            pct = (covered / total) * 100.0
+            print(f"[reach] message {messageId}: {covered}/{total} targets reached ({pct:.1f}%).")
+            print(f"[reach] still missing: {sorted(list(missing))}")
+            # Show current max latency among those reached
+            tmax = max(rx_first[nid] for nid in reached) if reached else tx_time
+            print(f"[reach] current elapsed for reached set: {tmax - tx_time:.3f} s")
+        else:
+            # all reached
+            tmax = max(rx_first[nid] for nid in targets)
+            print(f"[reach] message {messageId} reached ALL {total} targets in {tmax - tx_time:.3f} s")
+            print(f"[reach] nodes reached: {sorted(list(targets))}")
+
+
     def on_receive(self, interface, packet):
         if "requestId" in packet["decoded"]:
-            # Packet with requestId is coupled to original message
             existingMsgId = next((m.localId for m in self.messages if m.packet["id"] == packet["decoded"]["requestId"]), None)
             if existingMsgId is None:
                 print('Could not find requestId!\n')
@@ -744,6 +823,7 @@ class InteractiveSim:
             else:
                 self.messageId += 1
                 mId = self.messageId
+
         rP = InteractivePacket(packet, mId)
         self.messages.append(rP)
 
@@ -752,12 +832,50 @@ class InteractiveSim:
 
         transmitter = next((n for n in self.nodes if n.TCPPort == interface.portNumber), None)
         if transmitter is not None:
+            # --- NEW: first-time TX bookkeeping for this message ---
+            self._ensure_msg_bookkeeping(mId)
+            now = time.time()
+
+            # If this is the very first appearance of this messageId, stamp tx_time & origin & targets
+            if mId not in getattr(self, "_msg_origin", {}):
+                rP.tx_time = now
+                # remember the origin for this messageId
+                if not hasattr(self, "_msg_origin"):
+                    self._msg_origin = {}
+                self._msg_origin[mId] = transmitter
+
+                # precompute targets within 30 km (default)
+                radius_m = getattr(self, "RADIUS_DEFAULT_M", 30000)
+                targets = self._target_nodes_for_radius(transmitter, radius_m)
+                if not hasattr(self, "_msg_targets"):
+                    self._msg_targets = {}
+                self._msg_targets[mId] = targets
+            else:
+                # use the original tx_time if already known
+                origin_pkt = next((p for p in self.messages if p.localId == mId and p.tx_time is not None), None)
+                if origin_pkt:
+                    rP.tx_time = origin_pkt.tx_time
+
             receivers = [n for n in self.nodes if n.nodeid != transmitter.nodeid]
             rxs, rssis, snrs = self.calc_receivers(transmitter, receivers)
             rP.setTxRxs(transmitter, rxs)
             rP.setRSSISNR(rssis, snrs)
+
+            # --- NEW: record first receive times for target nodes ---
+            # we log the time RIGHT BEFORE we forward (aprox receive time in this simulator)
+            rx_first = self._msg_rx_first[mId]   # shorthand
+            targets = self._msg_targets.get(mId, set())
+
+            stamp = time.time()
+            for rx in rxs:
+                if rx.nodeid in targets and rx.nodeid not in rx_first:
+                    rx_first[rx.nodeid] = stamp
+                    # (optional) quick debug
+                    # print(f"[reach] mId {mId}: node {rx.nodeid} first received at {stamp - rP.tx_time:.3f}s")
+
             self.forward_packet(rxs, packet, rssis, snrs)
             self.graph.packets.append(rP)
+
 
     def on_receive_metrics(self, interface, packet):
         fromNode = next((n for n in self.nodes if n.hwId == packet["from"]), None)
@@ -976,6 +1094,30 @@ class CommandProcessor(cmd.Cmd):
         self.sim.graph.plot_metrics(self.sim.nodes)
         self.sim.graph.init_routes(self.sim)
         return True
+
+    def do_reach(self, line):
+        """reach <messageId> [radius_km]
+        Show how long it took for broadcast <messageId> to reach all nodes within radius_km (default 30)."""
+        args = line.split()
+        if len(args) == 0:
+            print("Usage: reach <messageId> [radius_km]")
+            return False
+        try:
+            mid = int(args[0])
+        except ValueError:
+            print("messageId must be an integer")
+            return False
+
+        radius_km = None
+        if len(args) >= 2:
+            try:
+                radius_km = float(args[1])
+            except ValueError:
+                print("radius_km must be a number")
+                return False
+
+        self.sim.print_reach_time(mid, radius_km)
+
 
     def do_exit(self, line):
         """exit
