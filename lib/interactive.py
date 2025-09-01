@@ -784,6 +784,7 @@ class InteractiveSim:
         if radius_km is not None:
             radius_m = float(radius_km) * 1000.0
             targets = self._target_nodes_for_radius(origin, radius_m)
+            radius_label = f"{radius_km:.1f} km" # <-- for plot label
         else:
             targets = self._msg_targets.get(messageId, set())
             radius_label = "configured radius"   # <-- always set now
