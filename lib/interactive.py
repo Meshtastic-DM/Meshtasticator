@@ -14,6 +14,8 @@ from pubsub import pub
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import TextBox
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 from lib.config import Config
 import lib.phy as phy
@@ -827,10 +829,15 @@ class InteractiveSim:
             times_plot.append(tmax)
             cov_plot.append(100.0)
 
-        # ----- Save plot to file (no UI) -----
+        # ----- Save plot to file (no UI, no Tk) -----
 
         os.makedirs("out", exist_ok=True)
-        fig, ax = plt.subplots()
+        out_path = os.path.join("out", "ReachPlot.png")
+
+        fig = Figure(figsize=(6, 4), dpi=140)
+        canvas = FigureCanvas(fig)  # binds Agg canvas (no Tk)
+        ax = fig.add_subplot(111)
+
         title_suffix = "ALL reached" if not missing else f"{len(reached)}/{total} reached ({(len(reached)/total)*100:.1f}%)"
         ax.set_title(f"Message {messageId}: coverage vs time ({title_suffix})")
         ax.plot(times_plot, cov_plot, marker="o", linestyle="-")
@@ -839,10 +846,7 @@ class InteractiveSim:
         ax.set_ylim(0, 100)
         ax.grid(True, linestyle="--", alpha=0.6)
 
-        out_path = os.path.join("out", "ReachPlot.png")
         fig.savefig(out_path, dpi=140, bbox_inches="tight")
-        plt.close(fig)
-
         print(f"[reach] saved coverage plot to {out_path}")
 
 
