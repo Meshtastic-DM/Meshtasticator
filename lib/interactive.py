@@ -784,6 +784,7 @@ class InteractiveSim:
             targets = self._target_nodes_for_radius(origin, radius_m)
         else:
             targets = self._msg_targets.get(messageId, set())
+            radius_label = "configured radius"   # <-- always set now
 
         rx_first = self._msg_rx_first.get(messageId, {})
         reached = targets.intersection(rx_first.keys())
@@ -808,6 +809,41 @@ class InteractiveSim:
             tmax = max(rx_first[nid] for nid in targets)
             print(f"[reach] message {messageId} reached ALL {total} targets in {tmax - tx_time:.3f} s")
             print(f"[reach] nodes reached: {sorted(list(targets))}")
+
+                # ----- Build ordered coverage series -----
+        rx_elapsed = [rx_first[nid] - tx_time for nid in reached]
+        rx_elapsed.sort()
+
+        # Coverage percentage at each receive
+        times_plot = [0.0]
+        cov_plot = [0.0]
+        for i, t in enumerate(rx_elapsed, start=1):
+            times_plot.append(t)
+            cov_plot.append(100.0 * i / total)
+
+        # Ensure final 100% point if all nodes are reached
+        if not missing and times_plot[-1] < max(rx_first[nid] - tx_time for nid in targets):
+            tmax = max(rx_first[nid] for nid in targets) - tx_time
+            times_plot.append(tmax)
+            cov_plot.append(100.0)
+
+        # ----- Plot (non-blocking) -----
+        plt.figure()
+        title_suffix = "ALL reached" if not missing else f"{len(reached)}/{total} reached ({(len(reached)/total)*100:.1f}%)"
+        plt.title(f"Message {messageId}: coverage vs time ({title_suffix})")
+
+        # Line plot instead of step plot
+        plt.plot(times_plot, cov_plot, marker="o", linestyle="-")
+
+        plt.xlabel("Elapsed time (s)")
+        radius_label = f"{radius_km:.1f} km" if radius_km is not None else "30.0 km"
+        plt.ylabel(f"Coverage within {radius_label} (%)")
+        plt.ylim(0, 100)
+        plt.grid(True, linestyle="--", alpha=0.6)
+
+        plt.show(block=False)
+        plt.pause(0.001)
+
 
 
     def on_receive(self, interface, packet):
