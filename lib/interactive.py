@@ -827,22 +827,23 @@ class InteractiveSim:
             times_plot.append(tmax)
             cov_plot.append(100.0)
 
-        # ----- Plot (non-blocking) -----
-        plt.figure()
+        # ----- Save plot to file (no UI) -----
+
+        os.makedirs("out", exist_ok=True)
+        fig, ax = plt.subplots()
         title_suffix = "ALL reached" if not missing else f"{len(reached)}/{total} reached ({(len(reached)/total)*100:.1f}%)"
-        plt.title(f"Message {messageId}: coverage vs time ({title_suffix})")
+        ax.set_title(f"Message {messageId}: coverage vs time ({title_suffix})")
+        ax.plot(times_plot, cov_plot, marker="o", linestyle="-")
+        ax.set_xlabel("Elapsed time (s)")
+        ax.set_ylabel(f"Coverage within {radius_label} (%)")
+        ax.set_ylim(0, 100)
+        ax.grid(True, linestyle="--", alpha=0.6)
 
-        # Line plot instead of step plot
-        plt.plot(times_plot, cov_plot, marker="o", linestyle="-")
+        out_path = os.path.join("out", "ReachPlot.png")
+        fig.savefig(out_path, dpi=140, bbox_inches="tight")
+        plt.close(fig)
 
-        plt.xlabel("Elapsed time (s)")
-        radius_label = f"{radius_km:.1f} km" if radius_km is not None else "30.0 km"
-        plt.ylabel(f"Coverage within {radius_label} (%)")
-        plt.ylim(0, 100)
-        plt.grid(True, linestyle="--", alpha=0.6)
-
-        plt.show(block=False)
-        plt.pause(0.001)
+        print(f"[reach] saved coverage plot to {out_path}")
 
 
 
