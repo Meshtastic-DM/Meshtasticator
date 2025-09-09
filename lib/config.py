@@ -100,7 +100,7 @@ class Config:
         #################################################
         ####### MOVING NODE SIMULATION VARIABLES ########
         #################################################
-        self.MOVEMENT_ENABLED = True
+        self.MOVEMENT_ENABLED = False
         # The average number of meters a human walks in a minute
         self.WALKING_METERS_PER_MIN = 96
         # The average number of meters a human bikes in a minute
