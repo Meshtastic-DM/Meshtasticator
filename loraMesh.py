@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import csv
 import os
 import sys
 import random
@@ -210,36 +211,45 @@ if conf.MOVEMENT_ENABLED:
 # print("Average delay of DM packets (ms):", round(meanDMDelay, 2))
 # print("Average delay of ACK packets (ms):", round(meanACKDelay, 2))
 
-sensorPacketDelaysAll = {}
-dmPacketDelaysAll = {}
-brocastPacketDelaysAll = {}
+sensorPacketMeanDelays = {}
+sensorPacketsDelayArrays = {}
+dmPacketMeanDelays = {}
+dmPacketsDelayArrays = {}
+brocastPacketMeanDelays = {}
+brocastPacketsDelayArrays = {}
 
 for n in nodes:
-	senSorPacketsDelays = n.SensorPacketsDelays
-	for originTxNodeId, delays in senSorPacketsDelays.items():
+	sensorPacketsDelays = n.SensorPacketsDelays
+	for originTxNodeId, delays in sensorPacketsDelays.items():
 		if delays:
-			if originTxNodeId not in sensorPacketDelaysAll:
-				sensorPacketDelaysAll[originTxNodeId] = {}
+			if originTxNodeId not in sensorPacketMeanDelays:
+				sensorPacketMeanDelays[originTxNodeId] = {}
+				sensorPacketsDelayArrays[originTxNodeId] = {}
 			meanDelay = np.nanmean(delays)
-			sensorPacketDelaysAll[originTxNodeId][n.nodeid] = meanDelay
-			
+			sensorPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			sensorPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
+
 			print(f"Average delay of sensor packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
 
 	broadCastPacketsDelays = n.BroadcastPacketsDelays
 	for originTxNodeId, delays in broadCastPacketsDelays.items():
 		if delays:
-			if originTxNodeId not in brocastPacketDelaysAll:
-				brocastPacketDelaysAll[originTxNodeId] = {}
+			if originTxNodeId not in brocastPacketMeanDelays:
+				brocastPacketMeanDelays[originTxNodeId] = {}
+				brocastPacketsDelayArrays[originTxNodeId] = {}
 			meanDelay = np.nanmean(delays)
-			brocastPacketDelaysAll[originTxNodeId][n.nodeid] = meanDelay
+			brocastPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			brocastPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
 			print(f"Average delay of broadcast packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
 	dmPacketsDelays = n.DMPacketsDelays
 	for originTxNodeId, delays in dmPacketsDelays.items():
 		if delays:
-			if originTxNodeId not in dmPacketDelaysAll:
-				dmPacketDelaysAll[originTxNodeId] = {}
+			if originTxNodeId not in dmPacketMeanDelays:
+				dmPacketMeanDelays[originTxNodeId] = {}
+				dmPacketsDelayArrays[originTxNodeId] = {}
 			meanDelay = np.nanmean(delays)
-			dmPacketDelaysAll[originTxNodeId][n.nodeid] = meanDelay
+			dmPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			dmPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
 			print(f"Average delay of DM packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
 	
 CreatedDMPackets = {}
@@ -296,9 +306,9 @@ print("Number of extra broadcast packets received by each node:", BroadcastPacke
 print("Number of extra DM packets received by each node:", DMPacketsExtra)
 print("Number of extra sensor packets received by each node:", SensorPacketsExtra)
 
-print("Sensor packets delays:", sensorPacketDelaysAll)
-print("DM packets delays:", dmPacketDelaysAll)
-print("Broadcast packets delays:", brocastPacketDelaysAll)
+print("Sensor packets delays:", sensorPacketMeanDelays)
+print("DM packets delays:", dmPacketMeanDelays)
+print("Broadcast packets delays:", brocastPacketMeanDelays)
 
 print("Range of nodes is",phy.MAXRANGE, "m")
 
@@ -398,9 +408,9 @@ delaySensor = [0 for _ in range(N)]
 dest = 0
 for source in range(N):
 	if source != dest:
-		if source in sensorPacketDelaysAll.keys():
-			if dest in sensorPacketDelaysAll[source].keys():
-				delaySensor[source] = sensorPacketDelaysAll[source][dest]
+		if source in sensorPacketMeanDelays.keys():
+			if dest in sensorPacketMeanDelays[source].keys():
+				delaySensor[source] = sensorPacketMeanDelays[source][dest]
 			else:
 				delaySensor[source] = None
 		else:
@@ -425,9 +435,9 @@ delayDM = [[0 for _ in range(N)] for _ in range(N)]
 for source in range(N):
 	for dest in range(N):
 		if source != dest:
-			if source in dmPacketDelaysAll.keys():
-				if dest in dmPacketDelaysAll[source].keys():
-					delayDM[source][dest] = dmPacketDelaysAll[source][dest]
+			if source in dmPacketMeanDelays.keys():
+				if dest in dmPacketMeanDelays[source].keys():
+					delayDM[source][dest] = dmPacketMeanDelays[source][dest]
 				else:
 					delayDM[source][dest] = None
 			else:
@@ -456,9 +466,9 @@ delayBroadcast = [0 for _ in range(N)]
 source = 0
 for dest in range(N):
 	if source != dest:
-		if source in brocastPacketDelaysAll.keys():
-			if dest in brocastPacketDelaysAll[source].keys():
-				delayBroadcast[dest] = brocastPacketDelaysAll[source][dest]
+		if source in brocastPacketMeanDelays.keys():
+			if dest in brocastPacketMeanDelays[source].keys():
+				delayBroadcast[dest] = brocastPacketMeanDelays[source][dest]
 			else:
 				delayBroadcast[dest] = None
 		else:
@@ -558,6 +568,27 @@ plt.title("Extra Broadcast Packets Ratio from Source 0")
 plt.grid(axis='y')
 plt.tight_layout()
 plt.show()
+
+def save_nested_dict_to_csv(data, filename):
+    """
+    Save a nested dictionary of the form:
+    {outer: {inner: [values...]}} into a CSV file
+    """
+    with open(filename, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["source", "destination", "delay_value"])
+        for outer, inner_dict in data.items():
+            for inner, values in inner_dict.items():
+                for v in values:
+                    writer.writerow([outer, inner, v])
+
+print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
+print("DM packets delay arrays:", dmPacketsDelayArrays)
+print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
+
+save_nested_dict_to_csv(sensorPacketsDelayArrays, "sensor_packets_R.csv")
+save_nested_dict_to_csv(dmPacketsDelayArrays, "dm_packets_R.csv")
+save_nested_dict_to_csv(brocastPacketsDelayArrays, "broadcast_packets_R.csv")
 
 if conf.PLOT:
 	plot_schedule(conf, packets, messages)

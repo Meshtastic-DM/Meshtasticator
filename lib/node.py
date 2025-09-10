@@ -214,7 +214,7 @@ class MeshNode:
                 destId = NODENUM_BROADCAST
                 self.numberOfBroadcastPacketsCreated += 1
             elif self.simRole == "DM":
-                nextGen = self.get_next_time(3*60*1000)
+                nextGen = self.get_next_time(1*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
