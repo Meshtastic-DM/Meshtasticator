@@ -202,13 +202,18 @@ def coverage_report(conf):
 		print(f"Time to reach ALL targets: {times[-1]:.1f} ms")
 
 
+
+
+
+
 def repl(env, conf, nodes, packets, messages, delays):
-	def print_help():
-		print("""
+    def print_help():
+        print("""
 Commands:
   bcast  <src> [ack=0|1] [radius_m] - broadcast from <src>; if radius_m is given, (re)start 30km-coverage tracking with that radius
   dm     <src> <dst> [ack=1]        - send DM from <src> to <dst>
   cov                               - show coverage stats for last tracked broadcast
+  addg   <N> [radius_m=30000] [sigma_m=radius/3] - add N nodes in a Gaussian cluster (truncated) around the map center
   step   <ms>                       - advance simulation by <ms> milliseconds
   time                               - show current sim time (ms)
   nodes                              - list node ids and positions
@@ -217,110 +222,178 @@ Commands:
   quit / exit                        - end the simulation
 """)
 
-	def do_stats():
-		print("---- stats ----")
-		print(f"t = {env.now} ms")
-		print(f"messages: {len(messages)}")
-		sent = len(packets)
-		print(f"packets sent: {sent}")
-		nrCollisions = sum(1 for p in packets for n in nodes if p.collidedAtN[n.nodeid])
-		nrSensed     = sum(1 for p in packets for n in nodes if p.sensedByN[n.nodeid])
-		nrReceived   = sum(1 for p in packets for n in nodes if p.receivedAtN[n.nodeid])
-		print(f"collisions: {nrCollisions} | sensed: {nrSensed} | received: {nrReceived}")
-		if delays:
-			print(f"avg delay: {np.nanmean(delays):.2f} ms (n={len(delays)})")
+    def do_stats():
+        print("---- stats ----")
+        print(f"t = {env.now} ms")
+        print(f"messages: {len(messages)}")
+        sent = len(packets)
+        print(f"packets sent: {sent}")
+        nrCollisions = sum(1 for p in packets for n in nodes if p.collidedAtN[n.nodeid])
+        nrSensed     = sum(1 for p in packets for n in nodes if p.sensedByN[n.nodeid])
+        nrReceived   = sum(1 for p in packets for n in nodes if p.receivedAtN[n.nodeid])
+        print(f"collisions: {nrCollisions} | sensed: {nrSensed} | received: {nrReceived}")
+        if delays:
+            print(f"avg delay: {np.nanmean(delays):.2f} ms (n={len(delays)})")
 
-	print("\n====== INTERACTIVE SIM ======")
-	print_help()
+    # ---- local helpers for Gaussian placement and node creation ----
+    def _sample_gaussian_points_2d(n, radius_m, ox, oy, sigma_m=None, max_tries=1000):
+        if sigma_m is None:
+            sigma_m = radius_m / 3.0
+        pts = []
+        tries = 0
+        r2 = radius_m * radius_m
+        while len(pts) < n and tries < max_tries:
+            tries += 1
+            x = np.random.normal(loc=ox, scale=sigma_m)
+            y = np.random.normal(loc=oy, scale=sigma_m)
+            dx = x - ox
+            dy = y - oy
+            if (dx * dx + dy * dy) <= r2:
+                pts.append((float(x), float(y)))
+        # fallback to uniform-in-disk if rejection didn't fill up
+        while len(pts) < n:
+            u = np.random.random()
+            theta = 2 * np.pi * np.random.random()
+            r = radius_m * np.sqrt(u)
+            pts.append((float(ox + r * np.cos(theta)), float(oy + r * np.sin(theta))))
+        return pts
 
-	# tiny warmup to avoid divide-by-zero if MAC uses env.now
-	env.run(until=max(1, env.now))
+    def _add_nodes_gaussian(n_new, radius_m, sigma_m=None, z_default=1.0):
+        if n_new <= 0:
+            return 0
+        # sample positions
+        pts = _sample_gaussian_points_2d(n_new, radius_m, conf.OX, conf.OY, sigma_m=sigma_m)
+        created = 0
+        for (x, y) in pts:
+            packetsAtN.append([])  # prepare per-node bucket before constructing the node
+            node_id = len(nodes)
+            node = MeshNode(conf, nodes, env, bc_pipe, node_id, conf.PERIOD,
+                            messages, packetsAtN, packets, delays, None, messageSeq, verboseprint)
+            node.x = x
+            node.y = y
+            node.z = z_default
 
-	while True:
-		try:
-			line = input("sim> ").strip()
-		except (EOFError, KeyboardInterrupt):
-			print()
-			break
-		if not line:
-			continue
+            # force it to be a muted client
+            node.isClientMute = True
+            node.isRouter = False
+            node.isRepeater = False
 
-		toks = line.split()
-		cmd = toks[0].lower()
+            nodes.append(node)
+            graph.add_node(node)
+            created += 1
+        # sync count and recompute links
+        conf.NR_NODES = len(nodes)
+        setup_asymmetric_links(conf, nodes)
+        return created
 
-		if cmd in ("quit", "exit"):
-			break
-		elif cmd == "help":
-			print_help()
-		elif cmd == "time":
-			print(f"t = {env.now} ms")
-		elif cmd == "nodes":
-			for i, n in enumerate(nodes):
-				print(f"#{i}: ({n.x:.1f},{n.y:.1f}) z={n.z} router={n.isRouter} repeater={n.isRepeater}")
-		elif cmd == "stats":
-			do_stats()
-		elif cmd == "cov":
-			coverage_report(conf)
-		elif cmd == "step":
-			if len(toks) < 2:
-				print("usage: step <ms>")
-				continue
-			try:
-				ms = int(float(toks[1]))
-			except ValueError:
-				print("ms must be a number")
-				continue
-			env.run(until=env.now + ms)
-			print(f"advanced to t={env.now} ms")
-		elif cmd in ("bcast", "broadcast"):
-			if len(toks) < 2:
-				print("usage: bcast <src> [ack=0|1] [radius_m]")
-				continue
-			try:
-				src = int(toks[1])
-				ack = bool(int(toks[2])) if len(toks) >= 3 else False
-				rad = int(toks[3]) if len(toks) >= 4 else COVERAGE_RADIUS_M
-			except ValueError:
-				print("bad args")
-				continue
-			if not (0 <= src < len(nodes)):
-				print("invalid src id")
-				continue
-			# Send the broadcast
-			p = nodes[src].send_packet(NODENUM_BROADCAST, type="BCAST")
-			try:
-				p.wantAck = ack
-			except Exception:
-				pass
-			# Start (or restart) coverage tracking for this broadcast's (src, seq)
-			conf._ENV = env  # allow tracker to read env.now
-			start_coverage_tracking(conf, nodes, src, p.seq, rad)
-			# advance enough for a TX/RX round to complete; you can step more as needed
-			env.run(until=env.now + 5000)
-			print(f"broadcast from {src} done; t={env.now} ms")
-			coverage_report(conf)
-		elif cmd == "dm":
-			if len(toks) < 3:
-				print("usage: dm <src> <dst> [ack=1]")
-				continue
-			try:
-				src = int(toks[1]); dst = int(toks[2])
-				ack = bool(int(toks[3])) if len(toks) >= 4 else True
-			except ValueError:
-				print("bad args")
-				continue
-			if not (0 <= src < len(nodes)) or not (0 <= dst < len(nodes)) or src == dst:
-				print("invalid src/dst")
-				continue
-			p = nodes[src].send_packet(dst, type="DM")
-			try:
-				p.wantAck = ack
-			except Exception:
-				pass
-			env.run(until=env.now + 5000)
-			print(f"dm {src}->{dst} sent; t={env.now} ms")
-		else:
-			print("unknown command. type 'help'.")
+    print("\n====== INTERACTIVE SIM ======")
+    print_help()
+
+    # tiny warmup to avoid divide-by-zero if MAC uses env.now
+    env.run(until=max(1, env.now))
+
+    while True:
+        try:
+            line = input("sim> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not line:
+            continue
+
+        toks = line.split()
+        cmd = toks[0].lower()
+
+        if cmd in ("quit", "exit"):
+            break
+        elif cmd == "help":
+            print_help()
+        elif cmd == "time":
+            print(f"t = {env.now} ms")
+        elif cmd == "nodes":
+            for i, n in enumerate(nodes):
+                print(f"#{i}: ({n.x:.1f},{n.y:.1f}) z={n.z} router={n.isRouter} repeater={n.isRepeater}")
+        elif cmd == "stats":
+            do_stats()
+        elif cmd == "cov":
+            coverage_report(conf)
+        elif cmd == "step":
+            if len(toks) < 2:
+                print("usage: step <ms>")
+                continue
+            try:
+                ms = int(float(toks[1]))
+            except ValueError:
+                print("ms must be a number")
+                continue
+            env.run(until=env.now + ms)
+            print(f"advanced to t={env.now} ms")
+        elif cmd in ("bcast", "broadcast"):
+            if len(toks) < 2:
+                print("usage: bcast <src> [ack=0|1] [radius_m]")
+                continue
+            try:
+                src = int(toks[1])
+                ack = bool(int(toks[2])) if len(toks) >= 3 else False
+                rad = int(toks[3]) if len(toks) >= 4 else COVERAGE_RADIUS_M
+            except ValueError:
+                print("bad args")
+                continue
+            if not (0 <= src < len(nodes)):
+                print("invalid src id")
+                continue
+            # Send the broadcast
+            p = nodes[src].send_packet(NODENUM_BROADCAST, type="BCAST")
+            try:
+                p.wantAck = ack
+            except Exception:
+                pass
+            # Start (or restart) coverage tracking for this broadcast's (src, seq)
+            conf._ENV = env  # allow tracker to read env.now
+            start_coverage_tracking(conf, nodes, src, p.seq, rad)
+            # advance enough for a TX/RX round to complete; you can step more as needed
+            env.run(until=env.now + 5000)
+            print(f"broadcast from {src} done; t={env.now} ms")
+            coverage_report(conf)
+        elif cmd == "dm":
+            if len(toks) < 3:
+                print("usage: dm <src> <dst> [ack=1]")
+                continue
+            try:
+                src = int(toks[1]); dst = int(toks[2])
+                ack = bool(int(toks[3])) if len(toks) >= 4 else True
+            except ValueError:
+                print("bad args")
+                continue
+            if not (0 <= src < len(nodes)) or not (0 <= dst < len(nodes)) or src == dst:
+                print("invalid src/dst")
+                continue
+            p = nodes[src].send_packet(dst, type="DM")
+            try:
+                p.wantAck = ack
+            except Exception:
+                pass
+            env.run(until=env.now + 5000)
+            print(f"dm {src}->{dst} sent; t={env.now} ms")
+        elif cmd == "addg":
+            if len(toks) < 2:
+                print("usage: addg <N> [radius_m=30000] [sigma_m=radius/3]")
+                continue
+            try:
+                N = int(toks[1])
+                radius_m = int(toks[2]) if len(toks) >= 3 else COVERAGE_RADIUS_M
+                sigma_m = float(toks[3]) if len(toks) >= 4 else None
+            except ValueError:
+                print("bad args: N must be int; radius_m int; sigma_m float")
+                continue
+            before = len(nodes)
+            made = _add_nodes_gaussian(N, radius_m, sigma_m=sigma_m)
+            after = len(nodes)
+            print(f"added {made} nodes; total nodes: {after} (was {before})")
+        else:
+            print("unknown command. type 'help'.")
+
+
 
 
 # ======================== main ========================
