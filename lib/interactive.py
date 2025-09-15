@@ -21,11 +21,11 @@ from lib.common import calc_dist, gen_scenario, find_random_position, Graph
 
 conf = Config()
 HW_ID_OFFSET = 16
-TCP_PORT_OFFSET = 4403
+TCP_PORT_OFFSET = 4404
 TCP_PORT_CLIENT = 4402
 MAX_TO_FROM_RADIO_SIZE = 512
-DEVICE_SIM_DOCKER_IMAGE = "meshtastic/device-simulator"
-MESHTASTICD_PATH_DOCKER = "./meshtasticd"
+DEVICE_SIM_DOCKER_IMAGE = "meshtastic/meshtasticd"
+MESHTASTICD_PATH_DOCKER = "meshtasticd"
 
 
 class InteractiveNode:
@@ -65,12 +65,21 @@ class InteractiveNode:
         self.iface = iface
 
     def set_config(self):
-        requiresReboot = False
         # Set a long and short name
         p = admin_pb2.AdminMessage()
         p.set_owner.long_name = "Node "+str(self.nodeid)
         p.set_owner.short_name = str(self.nodeid)
         self.iface.localNode._sendAdmin(p)
+        time.sleep(0.1)
+
+        # Disable UDP as it causes packets to be received even if not in range
+        p = admin_pb2.AdminMessage()
+        p.set_config.network.enabled_protocols = 0
+        networkConfig = self.iface.localNode.localConfig.network
+        setattr(networkConfig, 'enabled_protocols', 0)
+        p.set_config.network.CopyFrom(networkConfig)
+        self.iface.localNode._sendAdmin(p)
+
         if self.hopLimit != 3:
             loraConfig = self.iface.localNode.localConfig.lora
             setattr(self.iface.localNode.localConfig.lora, 'hop_limit', self.hopLimit)
@@ -79,21 +88,18 @@ class InteractiveNode:
             self.iface.localNode._sendAdmin(p)
 
         if self.isRouter:
-            requiresReboot = True
             deviceConfig = self.iface.localNode.localConfig.device
             setattr(deviceConfig, 'role', "ROUTER")
             p = admin_pb2.AdminMessage()
             p.set_config.device.CopyFrom(deviceConfig)
             self.iface.localNode._sendAdmin(p)
         elif self.isRepeater:
-            requiresReboot = True
             deviceConfig = self.iface.localNode.localConfig.device
             setattr(deviceConfig, 'role', "REPEATER")
             p = admin_pb2.AdminMessage()
             p.set_config.device.CopyFrom(deviceConfig)
             self.iface.localNode._sendAdmin(p)
         elif self.isClientMute:
-            requiresReboot = True
             deviceConfig = self.iface.localNode.localConfig.device
             setattr(deviceConfig, 'role', "CLIENT_MUTE")
             p = admin_pb2.AdminMessage()
@@ -101,13 +107,13 @@ class InteractiveNode:
             self.iface.localNode._sendAdmin(p)
 
         if self.neighborInfo:
-            requiresReboot = True
             moduleConfig = self.iface.localNode.moduleConfig.neighbor_info
             setattr(moduleConfig, 'enabled', 1)
             setattr(moduleConfig, 'update_interval', 30)
             p = admin_pb2.AdminMessage()
             p.set_module_config.neighbor_info.CopyFrom(moduleConfig)
             self.iface.localNode._sendAdmin(p)
+            time.sleep(0.1)
 
         base_lat = 44
         base_lon = -105
@@ -115,8 +121,6 @@ class InteractiveNode:
         lat = base_lat + (self.y * conv_factor)
         lon = base_lon + (self.x * conv_factor)
         self.iface.sendPosition(lat, lon, 0)
-
-        return requiresReboot
 
     def add_admin_channel(self):
         ch = self.iface.localNode.getChannelByChannelIndex(1)
@@ -151,8 +155,7 @@ class InteractiveGraph(Graph):
         self.routes = False
 
     def init_routes(self, sim):
-        if not sim.docker:
-            sim.close_nodes()
+        sim.close_nodes()
         if not self.routes:
             self.routes = True
             self.sim = sim
@@ -173,8 +176,6 @@ class InteractiveGraph(Graph):
             self.fig.canvas.draw_idle()
             self.fig.canvas.get_tk_widget().focus_set()
             plt.show()
-        elif sim.docker:
-            sim.close_nodes()
 
     def clear_route(self):
         for arr in self.arrows.copy():
@@ -390,19 +391,19 @@ class InteractiveSim:
             if sys.platform == "darwin":
                 self.container = dockerClient.containers.run(
                     DEVICE_SIM_DOCKER_IMAGE,
-                    f"{startNode} -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort}",
+                    f"{startNode} -s -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort}",
                     ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
                     name="Meshtastic", detach=True, auto_remove=True, user="root"
                 )
                 for n in self.nodes[1:]:
                     if self.emulateCollisions:
                         time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
-                    self.container.exec_run(f"{startNode} -d /home/node{n0.nodeid} -h {n.hwId} -p {n.TCPPort}", detach=True, user="root")
+                    self.container.exec_run(f"{startNode} -s -d /home/node{n0.nodeid} -h {n.hwId} -p {n.TCPPort}", detach=True, user="root")
                 print(f"Docker container with name {self.container.name} is started.")
             else:
                 self.container = dockerClient.containers.run(
                     DEVICE_SIM_DOCKER_IMAGE,
-                    f"sh -c '{startNode} -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort} > /home/out_{n0.nodeid}.log'",
+                    command=f"sh -cx '{startNode} -s -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort} > /home/out_{n0.nodeid}.log'",
                     ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
                     name="Meshtastic", detach=True, auto_remove=True, user="root",
                     volumes={"Meshtasticator": {'bind': '/home/', 'mode': 'rw'}}
@@ -410,7 +411,7 @@ class InteractiveSim:
                 for n in self.nodes[1:]:
                     if self.emulateCollisions:
                         time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
-                    self.container.exec_run(f"sh -c '{startNode} -d /home/node{n.nodeid} -h {n.hwId} -p {n.TCPPort} > /home/out_{n.nodeid}.log'", detach=True, user="root")
+                    self.container.exec_run(f"sh -cx '{startNode} -s -d /home/node{n.nodeid} -h {n.hwId} -p {n.TCPPort} > /home/out_{n.nodeid}.log'", detach=True, user="root")
                 print(f"Docker container with name {self.container.name} is started.")
                 print(f"You can check the device logs using 'docker exec -it {self.container.name} cat /home/out_x.log', where x is the node number.")
         else:
@@ -432,7 +433,8 @@ class InteractiveSim:
                 # executable
                 call += [os.path.join(args.program, 'program')]
                 # node parameters
-                call += [f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid}",
+                call += [f"-s ",
+                         f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid}",
                          f"-h {n.hwId}",
                          f"-p {n.TCPPort}"]
                 if self.removeConfig:
@@ -466,13 +468,19 @@ class InteractiveSim:
             for n in self.nodes[int(self.forwardToClient):]:
                 iface = tcp_interface.TCPInterface(hostname="localhost", portNumber=n.TCPPort)
                 n.add_interface(iface)
+
             if self.forwardToClient:
                 self.clientConnected = True
                 iface0.localNode.nodeNum = self.nodes[0].hwId
                 iface0.connect()  # real connection now
+
+            # wait for all nodes to connect
+            while not all(n.iface.isConnected.isSet() for n in self.nodes[int(self.forwardToClient):]):
+                time.sleep(0.1)
+
             for n in self.nodes:
-                requiresReboot = n.set_config()
-                if requiresReboot and self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
+                n.set_config()
+                if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
                     time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
             self.reconnect_nodes()
             pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
@@ -516,6 +524,8 @@ class InteractiveSim:
         meshPacket.hop_limit = packet.get("hopLimit", meshPacket.hop_limit)
         meshPacket.hop_start = packet.get("hopStart", meshPacket.hop_start)
         meshPacket.via_mqtt = packet.get("viaMQTT", meshPacket.via_mqtt)
+        meshPacket.relay_node = packet.get("relayNode", meshPacket.relay_node)
+        meshPacket.next_hop = packet.get("nextHop", meshPacket.next_hop)
         meshPacket.decoded.request_id = packet["decoded"].get("requestId", meshPacket.decoded.request_id)
         meshPacket.decoded.want_response = packet["decoded"].get("wantResponse", meshPacket.decoded.want_response)
         meshPacket.channel = int(packet.get("channel", meshPacket.channel))
@@ -561,11 +571,11 @@ class InteractiveSim:
     def show_nodes(self, id=None):
         if id is not None:
             print('NodeDB as seen by node', id)
-            self.nodes[id].iface.show_nodes()
+            self.nodes[id].iface.showNodes()
         else:
             for n in self.nodes:
                 print('NodeDB as seen by node', n.nodeid)
-                n.iface.show_nodes()
+                n.iface.showNodes()
 
     def send_broadcast(self, text, fromNode):
         self.get_node_iface_by_id(fromNode).sendText(text)
@@ -702,7 +712,7 @@ class InteractiveSim:
         for rx in receivers:
             dist_3d = calc_dist(tx.x, rx.x, tx.y, rx.y, tx.z, rx.z)
             pathLoss = phy.estimate_path_loss(conf, dist_3d, conf.FREQ, tx.z, rx.z)
-            RSSI = conf.PTX + tx.antennaGain + rx.antennaGain - pathLoss
+            RSSI = conf.PTX + tx.antennaGain - pathLoss
             SNR = RSSI-conf.NOISE_LEVEL
             if RSSI >= conf.SENSMODEM[conf.MODEM]:
                 rxs.append(rx)
@@ -747,11 +757,11 @@ class CommandProcessor(cmd.Cmd):
         self.sim.send_broadcast(txt, fromNode)
 
     def do_dm(self, line):
-        """DM <fromNode> <toNode> <txt>
+        """dm <fromNode> <toNode> <txt>
         Send a Direct Message from node \x1B[3mfromNode\x1B[0m to node \x1B[3mtoNode\x1B[0m with text \x1B[3mtxt\x1B[0m."""
         arguments = line.split()
         if len(arguments) < 3:
-            print('Please use the syntax: "DM <fromNode> <toNode> <txt>"')
+            print('Please use the syntax: "dm <fromNode> <toNode> <txt>"')
             return False
         fromNode = int(arguments[0])
         if self.sim.get_node_iface_by_id(fromNode) is None:
