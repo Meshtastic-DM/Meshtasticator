@@ -21,6 +21,7 @@ class MeshPacket_AODV(MeshPacket):
         
         # Additional tracking attributes
         self.route_discovery_time = None  # Time taken for route discovery
+        self.is_rreq = False  # Flag to indicate if this is a RREQ packet
         self.is_rrep = False  # Flag to indicate if this is a RREP packet
         self.is_rerr = False  # Flag to indicate if this is a RERR packet
 

@@ -11,6 +11,7 @@ from lib.common import Graph, plot_schedule, gen_scenario, run_graph_updates, se
 from lib.config import Config
 from lib.discrete_event import BroadcastPipe
 from lib.node import MeshNode
+from lib.node_aodv import MeshNode_AODV
 
 VERBOSE = True
 conf = Config()
@@ -89,7 +90,7 @@ noLinks = 0
 
 graph = Graph(conf)
 for i in range(conf.NR_NODES):
-	node = MeshNode(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+	node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 	nodes.append(node)
 	graph.add_node(node)
 
