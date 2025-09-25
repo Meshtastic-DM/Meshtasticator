@@ -153,6 +153,12 @@ if conf.MOVEMENT_ENABLED:
 	print("Number of moving nodes w/ GPS:", gpsEnabled)
 
 graph.save()
+for node in nodes:
+	routeTable = node.get_route_table()
+	if len(routeTable) > 0:
+		print(f"\nNode {node.nodeid} route table:")
+		for dest, entry in routeTable.items():
+			print(f"  Dest: {dest}, Next Hop: {entry['nextHop']}, Hop Count: {entry['hopCount']}, Seq: {entry['destSeqNum']}, Lifetime: {round(entry['lifeTime'] - env.now, 2)}s")
 
 if conf.PLOT:
 	plot_schedule(conf, packets, messages)

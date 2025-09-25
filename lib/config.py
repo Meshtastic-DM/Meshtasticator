@@ -35,7 +35,7 @@ class Config:
         self.MODEM = 4  # LoRa modem to use: 0 = ShortFast, 1 = Short Slow, ... 7 = Very Long Slow (default 4 is LongFast)
         self.PERIOD = 100 * self.ONE_SECOND_INTERVAL  # mean period of generating a new message with exponential distribution in ms
         self.PACKETLENGTH = 40  # payload in bytes
-        self.SIMTIME = 30 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
+        self.SIMTIME = 70 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
         self.INTERFERENCE_LEVEL = 0.05  # chance that at a given moment there is already a LoRa packet being sent on your channel, outside of the Meshtastic traffic. Given in a ratio from 0 to 1.
         self.COLLISION_DUE_TO_INTERFERENCE = False
         self.DMs = True  # Set True for sending DMs (with random destination), False for broadcasts
@@ -101,7 +101,7 @@ class Config:
         #################################################
         ####### MOVING NODE SIMULATION VARIABLES ########
         #################################################
-        self.MOVEMENT_ENABLED = True
+        self.MOVEMENT_ENABLED = False
         # The average number of meters a human walks in a minute
         self.WALKING_METERS_PER_MIN = 96
         # The average number of meters a human bikes in a minute

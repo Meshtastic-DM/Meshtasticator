@@ -214,74 +214,109 @@ scheduleIdx = 0
 
 
 def plot_schedule(conf, packets, messages):
-	def draw_schedule(i):
-		t = timeSequences[i]
-		plt.suptitle('Time schedule {}/{}\nDouble click to continue.'.format(i+1, len(timeSequences)))
-		for p in packets:  # collisions
-			if p.seq in [m.seq for m in t]:
-				for rxId, bool in enumerate(p.collidedAtN):
-					if bool:
-						plt.barh(rxId, p.timeOnAir, left=p.startTime, color='red', edgecolor='r')
-		for p in packets:  # transmissions
-			if p.seq in [m.seq for m in t]:
-				color = 'orange' if p.isAck else 'blue'
-				plt.barh(p.txNodeId, p.timeOnAir, left=p.startTime, color=color, edgecolor='k')
-				plt.text(p.startTime+p.timeOnAir/2, p.txNodeId, str(p.seq), horizontalalignment='center', verticalalignment='center', fontsize=12)
-		for p in packets:  # receptions
-			if p.seq in [m.seq for m in t]:
-				for rxId, bool in enumerate(p.receivedAtN):
-					if bool:
-						plt.barh(rxId, p.timeOnAir, left=p.startTime, color='green', edgecolor='green')
-		maxTime = 0
-		for m in t:  # message generations
-			plt.arrow(m.genTime, m.origTxNodeId - 0.4, 0, 0.5, head_width=0.02 * (m.endTime - m.genTime), head_length=0.3, fc='k', ec='k')
-			plt.text(m.genTime, m.origTxNodeId + 0.51, str(m.seq), horizontalalignment='center', verticalalignment='center', fontsize=12)
-		maxTime = max([m.endTime for m in t])
-		minTime = min([m.genTime for m in t])
+    # Nothing to plot?
+    if not messages or not packets:
+        print("plot_schedule: no messages or packets to plot.")
+        return
 
-		plt.xlabel('Time (ms)')
-		plt.ylabel('Node ID')
-		plt.yticks([0] + list(range(conf.NR_NODES)), label=[str(n) for n in [0] + list(range(conf.NR_NODES))])
-		plt.xlim(minTime - 0.03 * (maxTime - minTime), maxTime)
-		plt.show()
+    # Map seq -> packets once
+    pkts_by_seq = {}
+    for p in packets:
+        pkts_by_seq.setdefault(p.seq, []).append(p)
 
-	# combine all messages with overlapping packets in one time sequence
-	overlapping = [[m] for m in messages]
-	for m in messages:
-		m.endTime = max([p.endTime for p in packets if p.seq == m.seq])
-	for m1 in messages:
-		for m2 in messages:
-			if m1 != m2:
-				if m2.genTime <= m1.endTime and m2.endTime > m1.genTime:
-					overlapping[m1.seq - 1].append(m2)
-	timeSequences = []
-	multiples = [[] for _ in overlapping]
-	for ind, o1 in enumerate(overlapping):
-		for o2 in overlapping:
-			if set(o1).issubset(set(o2)):
-				multiples[ind].append(set(o2))
-		maxSet = max(multiples[ind], key=len)
-		if maxSet not in timeSequences:
-			timeSequences.append(maxSet)
-	# do not plot time sequences with messages that were only generated but not sent
-	timeSequences = [t for t in timeSequences if max([m.endTime for m in t]) != 0]
+    # Compute endTime safely per message
+    for m in messages:
+        lst = pkts_by_seq.get(m.seq, [])
+        m.endTime = max((p.endTime for p in lst), default=0)
 
-	# plot each time sequence
-	fig = plt.figure()
-	move_figure(fig, 900, 200)
+    # Group overlapping messages (use positions, not m.seq-1)
+    overlapping = [[m] for m in messages]
+    for i, m1 in enumerate(messages):
+        for j, m2 in enumerate(messages):
+            if i == j:
+                continue
+            # Overlap if time windows intersect
+            if (m2.genTime <= m1.endTime) and (m2.endTime > m1.genTime):
+                overlapping[i].append(m2)
 
-	def onclick(event):
-		if event.dblclick:
-			global scheduleIdx
-			plt.cla()
-			scheduleIdx += 1
-			if scheduleIdx < len(timeSequences):
-				draw_schedule(scheduleIdx)
-			else:
-				plt.close('all')
+    # Reduce to unique maximal sets
+    timeSequences = []
+    for sets in overlapping:
+        s = frozenset(sets)
+        if s not in timeSequences:
+            timeSequences.append(s)
 
-	fig.canvas.mpl_connect('button_press_event', onclick)
-	draw_schedule(0)
+    # Keep only sequences that actually have sent packets
+    timeSequences = [list(t) for t in timeSequences if max((m.endTime for m in t), default=0) > 0]
+
+    if not timeSequences:
+        print("plot_schedule: no message sequences with transmissions to plot.")
+        return
+
+    def draw_schedule(i):
+        t = timeSequences[i]
+        plt.suptitle(f'Time schedule {i+1}/{len(timeSequences)}\nDouble click to continue.')
+
+        # Collisions (red)
+        for p in packets:
+            if p.seq in (m.seq for m in t):
+                for rxId, collided in enumerate(p.collidedAtN):
+                    if collided:
+                        plt.barh(rxId, p.timeOnAir, left=p.startTime, color='red', edgecolor='r')
+
+        # Transmissions (blue) / ACKs (orange)
+        for p in packets:
+            if p.seq in (m.seq for m in t):
+                color = 'orange' if p.isAck else 'blue'
+                plt.barh(p.txNodeId, p.timeOnAir, left=p.startTime, color=color, edgecolor='k')
+                plt.text(p.startTime + p.timeOnAir/2, p.txNodeId, str(p.seq),
+                         ha='center', va='center', fontsize=12)
+
+        # Receptions (green)
+        for p in packets:
+            if p.seq in (m.seq for m in t):
+                for rxId, got in enumerate(p.receivedAtN):
+                    if got:
+                        plt.barh(rxId, p.timeOnAir, left=p.startTime, color='green', edgecolor='green')
+
+        # Message generation arrows
+        for m in t:
+            # If endTime==genTime, draw a tiny arrow so head_width calc doesn’t explode
+            span = max(m.endTime - m.genTime, 1e-6)
+            plt.arrow(m.genTime, m.origTxNodeId - 0.4, 0, 0.5,
+                      head_width=0.02 * span, head_length=0.3, fc='k', ec='k')
+            plt.text(m.genTime, m.origTxNodeId + 0.51, str(m.seq),
+                     ha='center', va='center', fontsize=12)
+
+        maxTime = max(m.endTime for m in t)
+        minTime = min(m.genTime for m in t)
+        plt.xlabel('Time (ms)')
+        plt.ylabel('Node ID')
+        # Ticks for node IDs 0..NR_NODES-1
+        plt.yticks(list(range(conf.NR_NODES)), labels=[str(n) for n in range(conf.NR_NODES)])
+        # Add a small margin on the left
+        plt.xlim(minTime - 0.03 * max(1.0, (maxTime - minTime)), maxTime)
+        plt.show()
+
+    fig = plt.figure()
+    move_figure(fig, 900, 200)
+
+    def onclick(event):
+        if event.dblclick:
+            global scheduleIdx
+            plt.cla()
+            scheduleIdx += 1
+            if scheduleIdx < len(timeSequences):
+                draw_schedule(scheduleIdx)
+            else:
+                plt.close('all')
+
+    fig.canvas.mpl_connect('button_press_event', onclick)
+    # Reset index per run
+    global scheduleIdx
+    scheduleIdx = 0
+    draw_schedule(0)
+
 
 
 def move_figure(fig, x, y):
