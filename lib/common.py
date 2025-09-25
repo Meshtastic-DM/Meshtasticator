@@ -264,13 +264,19 @@ def plot_schedule(conf, packets, messages):
                     if collided:
                         plt.barh(rxId, p.timeOnAir, left=p.startTime, color='red', edgecolor='r')
 
-        # Transmissions (blue) / ACKs (orange)
+		# Transmissions (blue) / ACKs (orange)
         for p in packets:
             if p.seq in (m.seq for m in t):
                 color = 'orange' if p.isAck else 'blue'
-                plt.barh(p.txNodeId, p.timeOnAir, left=p.startTime, color=color, edgecolor='k')
-                plt.text(p.startTime + p.timeOnAir/2, p.txNodeId, str(p.seq),
-                         ha='center', va='center', fontsize=12)
+            if hasattr(p, 'is_rreq') and p.is_rreq:
+                color = 'purple'  # RREQs in purple
+            if hasattr(p, 'is_rrep') and p.is_rrep:
+                color = 'cyan'  # RREPs in cyan
+            if hasattr(p, 'is_rerr') and p.is_rerr:
+                color = 'brown'  # RERRs in brown
+            plt.barh(p.txNodeId, p.timeOnAir, left=p.startTime, color=color, edgecolor='k')
+            plt.text(p.startTime + p.timeOnAir/2, p.txNodeId, str(p.seq),
+						 ha='center', va='center', fontsize=12)
 
         # Receptions (green)
         for p in packets:
