@@ -64,7 +64,7 @@ class MeshNode_AODV(MeshNode):
         self.messageSeq["val"] += 1
         messageSeq = self.messageSeq["val"]
         self.messages.append(MeshMessage(self.nodeid, destId, self.env.now, messageSeq))
-        rreq_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, destId, self.nodeid, 10, self.seq_num, self.env.now, False, False, rreq_id, self.env.now, self.verboseprint,rreq_id=rreq_id)
+        rreq_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, destId, self.nodeid, 10, messageSeq, self.env.now, False, False, rreq_id, self.env.now, self.verboseprint,rreq_id=rreq_id)
         rreq_packet.is_rreq = True
         rreq_packet.is_rrep = False
         rreq_packet.is_rerr = False
@@ -77,6 +77,12 @@ class MeshNode_AODV(MeshNode):
 
     def handle_rreq(self, packet):
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
+        if not packet.is_rreq:
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'packet is not RREQ, ignoring')
+            return  # Not a valid RREQ packet
+        if packet.origTxNodeId == self.nodeid:
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is the source of RREQ, ignoring')
+            return  # RREQ originated from this node, ignore
         # Check if this RREQ has been processed before
         if (packet.origTxNodeId, packet.rreq_id) in self.processed_rreq:
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'already processed RREQ from', packet.origTxNodeId, 'RREQ_ID', packet.rreq_id)
@@ -106,11 +112,15 @@ class MeshNode_AODV(MeshNode):
         elif packet.ttl > 1:
             # Forward the RREQ
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarding RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
-            packet.hop_count += 1
-            packet.ttl -= 1
-            packet.txNodeId = self.nodeid
-            self.packets.append(packet)
-            self.env.process(self.transmit(packet)) # Rebroadcast the RREQ
+            fwd_packet = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, 10, packet.seq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=packet.rreq_id)
+            fwd_packet.is_rreq = True
+            fwd_packet.is_rrep = False
+            fwd_packet.is_rerr = False
+            fwd_packet.hop_count = packet.hop_count + 1
+            fwd_packet.ttl = packet.ttl - 1
+            fwd_packet.txNodeId = self.nodeid
+            self.packets.append(fwd_packet)
+            self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREQ
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted RREQ for', packet.destId, 'RREQ_ID', packet.rreq_id)
 
     def send_rrep(self, rreq_packet):
@@ -122,7 +132,7 @@ class MeshNode_AODV(MeshNode):
         self.messageSeq["val"] += 1
         messageSeq = self.messageSeq["val"]
         self.messages.append(MeshMessage(self.nodeid, rreq_packet.origTxNodeId, self.env.now, messageSeq))
-        rrep_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, rreq_packet.origTxNodeId, self.nodeid, 10, self.seq_num, self.env.now, False, False, None, self.env.now, self.verboseprint)
+        rrep_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, rreq_packet.origTxNodeId, self.nodeid, 10, messageSeq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=rreq_packet.rreq_id)
         rrep_packet.is_rreq = False
         rrep_packet.is_rrep = True
         rrep_packet.is_rerr = False
@@ -158,15 +168,17 @@ class MeshNode_AODV(MeshNode):
         self.forwarded_rrep.add(key)
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'marked RREP as processed from', packet.txNodeId, 'for', packet.origTxNodeId)
         # Update routing table with forward route to the destination
-        self.routing_table[packet.origTxNodeId] = RouteEntry(
-            destId=packet.origTxNodeId,
-            nextHop=packet.txNodeId,
-            hopCount=1,
-            destSeqNum=packet.seq,
-            valid=True,
-            precursorList=[],
-            lifeTime=self.env.now + 3000000  # Example lifetime
-        )
+        if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
+           packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
+            self.routing_table[packet.origTxNodeId] = RouteEntry(
+                destId=packet.origTxNodeId,
+                nextHop=packet.txNodeId,
+                hopCount=packet.hop_count + 1,
+                destSeqNum=packet.seq,
+                valid=True,
+                precursorList=[],
+                lifeTime=self.env.now + 3000000  # Example lifetime
+            )
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated forward route to', packet.origTxNodeId, 'via', packet.txNodeId)
         # If this node is the source of the RREQ, send pending packets
         if packet.destId == self.nodeid:
@@ -182,11 +194,17 @@ class MeshNode_AODV(MeshNode):
         elif packet.ttl > 1:
             # Forward the RREP
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarding RREP for', packet.origTxNodeId)
-            packet.hop_count += 1
-            packet.ttl -= 1
-            packet.txNodeId = self.nodeid
-            self.packets.append(packet)
-            self.env.process(self.transmit(packet)) # Rebroadcast the RREP
+            self.messageSeq["val"] += 1
+            messageSeq = self.messageSeq["val"]
+            fwd_packet = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, 10, messageSeq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=packet.rreq_id)
+            fwd_packet.is_rreq = False
+            fwd_packet.is_rrep = True
+            fwd_packet.is_rerr = False
+            fwd_packet.hop_count = packet.hop_count + 1
+            fwd_packet.ttl = packet.ttl - 1
+            fwd_packet.txNodeId = self.nodeid
+            self.packets.append(fwd_packet)
+            self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREP
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted RREP for', packet.origTxNodeId)
 
     def handle_rerr(self, packet):
@@ -213,15 +231,27 @@ class MeshNode_AODV(MeshNode):
     def receive(self, pipe):
         while True:
             packet = yield pipe.get()
-
-            if packet.txNodeId == self.nodeid:
-                continue  # Ignore packets sent by self
-            if not packet.sensedByN[self.nodeid]:
-                continue  # Ignore packets not sensed
-            if not packet.collidedAtN[self.nodeid]:
+            if packet.sensedByN[self.nodeid] and not packet.collidedAtN[self.nodeid] and packet.onAirToN[self.nodeid]:  # start of reception
+                if not self.isTransmitting:
+                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'started receiving packet', packet.seq, 'from', packet.txNodeId)
+                    packet.onAirToN[self.nodeid] = False
+                    self.isReceiving.append(True)
+                else:  # if you were currently transmitting, you could not have sensed it
+                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'was transmitting, so could not receive packet', packet.seq)
+                    packet.sensedByN[self.nodeid] = False
+                    packet.onAirToN[self.nodeid] = False
+            elif packet.sensedByN[self.nodeid]:  # end of reception
+                try:
+                    self.isReceiving[self.isReceiving.index(True)] = False
+                except Exception:
+                    pass
+                self.airUtilization += packet.timeOnAir
+                if packet.collidedAtN[self.nodeid]:
+                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'could not decode packet.')
+                    continue
                 packet.receivedAtN[self.nodeid] = True
-                self.usefulPackets += 1
-                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'from', packet.origTxNodeId)
+                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'with delay', round(self.env.now - packet.genTime, 2))
+                self.delays.append(self.env.now - packet.genTime)
                 if packet.is_rreq:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
                         self.handle_rreq(packet)
