@@ -6,6 +6,7 @@ import simpy
 
 from lib.common import calc_dist, find_random_position
 from lib.mac import set_transmit_delay, get_retransmission_msec
+from lib.packet_aodv import MeshPacket_AODV
 from lib.phy import check_collision, is_channel_active, airtime
 from lib.packet import NODENUM_BROADCAST, MeshPacket, MeshMessage
 
@@ -207,7 +208,15 @@ class MeshNode:
                         break
                     else:
                         if minRetransmissions > 0:  # generate new packet with same sequence number
-                            pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
+                            if self.conf.Packet_Version == 2:
+                                ############ AODV version ############
+                                pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
+                                pNew.retransmissions = minRetransmissions - 1
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
+                                self.packets.append(pNew)
+                                self.env.process(self.transmit(pNew))
+                            else:
+                                pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
                             pNew.retransmissions = minRetransmissions - 1
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
                             self.packets.append(pNew)

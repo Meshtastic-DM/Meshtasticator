@@ -23,7 +23,7 @@ class MeshNode_AODV(MeshNode):
         self.processed_rrep = set()  # Set to track processed RREPs to avoid loops
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
 
-    def send_packet(self, destId, wantAck=False):
+    def send_packet(self, destId, wantAck=True):
         plen = 20
         self.seq_num += 1
         self.messageSeq["val"] += 1
@@ -263,7 +263,12 @@ class MeshNode_AODV(MeshNode):
                         self.handle_rerr(packet)
                 elif packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
                     if not packet.isAck and packet.wantAck:
-                        ack_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, packet.origTxNodeId, self.nodeid, 10, packet.seq, self.env.now, False, True, None, self.env.now, self.verboseprint)
+                        self.messageSeq["val"] += 1
+                        messageSeq = self.messageSeq["val"]
+                        self.messages.append(MeshMessage(self.nodeid, packet.origTxNodeId, self.env.now, messageSeq))
+                        ack_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, packet.origTxNodeId, self.nodeid, 10, messageSeq, self.env.now, False, True, packet.seq, self.env.now, self.verboseprint)
+                        ack_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
+                        ack_packet.hopLimit = 10
                         self.packets.append(ack_packet)
                         self.env.process(self.transmit(ack_packet))
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent ACK for packet', packet.seq, 'to', packet.origTxNodeId)
@@ -286,6 +291,17 @@ class MeshNode_AODV(MeshNode):
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted packet', pNew.seq, 'to', pNew.destId)
                     else:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'dropped packet', packet.seq, 'due to hop limit reached')
+                for sentPacket in self.packets:
+                    # check if ACK for message you currently have in queue
+                    if sentPacket.txNodeId == self.nodeid and sentPacket.seq == packet.seq:
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received implicit ACK for message in queue.')
+                        ackReceived = True
+                        sentPacket.ackReceived = True
+                    # check if real ACK for message sent
+                    if sentPacket.origTxNodeId == self.nodeid and packet.isAck and sentPacket.seq == packet.requestId:
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received real ACK.')
+                        realAckReceived = True
+                        sentPacket.ackReceived = True
     def get_route_table(self):
         route_info = {}
         for destId, entry in self.routing_table.items():

@@ -120,6 +120,8 @@ class Config:
         # This mirrors the firmware's approach to monitoring channel utilization
         self.CHANNEL_UTILIZATION_PERIODS = 6
 
+        self.Packet_Version = 2 # 1 for original, 2 for AODV
+
     # Function that needs to be run to ensure the router dependent variables change appropriately
     def update_router_dependencies(self):
         # Example: Overwrite hop limit in the case of X new awesome routing algorithm
