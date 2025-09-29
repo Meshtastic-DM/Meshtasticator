@@ -70,6 +70,7 @@ class MeshNode_AODV(MeshNode):
         rreq_packet.is_rerr = False
         rreq_packet.hop_count = 0
         rreq_packet.ttl = 64  # Initial TTL value for RREQ
+        rreq_packet.hopLimit =5
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'created RREQ for', destId, 'with RREQ_ID', rreq_id)
         self.packets.append(rreq_packet)
         self.env.process(self.transmit(rreq_packet))
@@ -77,6 +78,9 @@ class MeshNode_AODV(MeshNode):
 
     def handle_rreq(self, packet):
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
+        if packet.hopLimit <= 0:
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'dropped RREQ due to hop limit reached')
+            return  # Drop the RREQ if hop limit is reached
         if not packet.is_rreq:
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'packet is not RREQ, ignoring')
             return  # Not a valid RREQ packet
@@ -118,6 +122,7 @@ class MeshNode_AODV(MeshNode):
             fwd_packet.is_rerr = False
             fwd_packet.hop_count = packet.hop_count + 1
             fwd_packet.ttl = packet.ttl - 1
+            fwd_packet.hopLimit = packet.hopLimit - 1
             fwd_packet.txNodeId = self.nodeid
             self.packets.append(fwd_packet)
             self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREQ
@@ -138,6 +143,8 @@ class MeshNode_AODV(MeshNode):
         rrep_packet.is_rerr = False
         rrep_packet.hop_count = 0
         rrep_packet.ttl = 64  # Initial TTL value for RREP
+        rrep_packet.hopLimit =5
+        rrep_packet.next_hop = self.routing_table.get(rreq_packet.origTxNodeId).nextHop if rreq_packet.origTxNodeId in self.routing_table else None
         # Update routing table with forward route to the destination
         # self.routing_table[rreq_packet.origTxNodeId] = RouteEntry(
         #     destId=rreq_packet.origTxNodeId,
@@ -191,7 +198,7 @@ class MeshNode_AODV(MeshNode):
                     self.env.process(self.transmit(pNew))
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'transmitted pending packet', pNew.seq, 'to', pNew.destId)
                 del self.pending_rreq[key]
-        elif packet.ttl > 1:
+        elif packet.hopLimit > 1 and packet.next_hop == self.nodeid:
             # Forward the RREP
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarding RREP for', packet.origTxNodeId)
             self.messageSeq["val"] += 1
@@ -202,6 +209,8 @@ class MeshNode_AODV(MeshNode):
             fwd_packet.is_rerr = False
             fwd_packet.hop_count = packet.hop_count + 1
             fwd_packet.ttl = packet.ttl - 1
+            fwd_packet.hopLimit = packet.hopLimit - 1
+            fwd_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
             fwd_packet.txNodeId = self.nodeid
             self.packets.append(fwd_packet)
             self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREP
