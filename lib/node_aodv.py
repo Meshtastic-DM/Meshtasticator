@@ -194,6 +194,7 @@ class MeshNode_AODV(MeshNode):
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sending pending packets for', packet.origTxNodeId)
                 for p in self.pending_rreq[key]:
                     pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                    pNew.next_hop = self.routing_table.get(p.destId).nextHop if p.destId in self.routing_table else None
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'transmitted pending packet', pNew.seq, 'to', pNew.destId)
@@ -201,9 +202,7 @@ class MeshNode_AODV(MeshNode):
         elif packet.hopLimit > 1 and packet.next_hop == self.nodeid:
             # Forward the RREP
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarding RREP for', packet.origTxNodeId)
-            self.messageSeq["val"] += 1
-            messageSeq = self.messageSeq["val"]
-            fwd_packet = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, 10, messageSeq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=packet.rreq_id)
+            fwd_packet = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, 10, packet.seq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=packet.rreq_id)
             fwd_packet.is_rreq = False
             fwd_packet.is_rrep = True
             fwd_packet.is_rerr = False
@@ -282,6 +281,55 @@ class MeshNode_AODV(MeshNode):
                         self.env.process(self.transmit(ack_packet))
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent ACK for packet', packet.seq, 'to', packet.origTxNodeId)
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'from', packet.origTxNodeId)
+                    if not packet.isAck:
+                        orginTxNodeId = packet.origTxNodeId
+                        for n in self.nodes:
+                            if n.nodeid == orginTxNodeId:
+                                orginTxNode = n
+                                break
+                        if orginTxNode.simRole == 'Sensor':
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is a Control node receiving a packet from Sensor node', orginTxNodeId)
+                            if not packet.seq in self.SensorPacketsReceived.keys():
+                                self.SensorPacketsReceived[packet.seq] = 0
+                                if not packet.origTxNodeId in self.SensorPacketsReceivedOrigId.keys():
+                                    self.SensorPacketsReceivedOrigId[packet.origTxNodeId] = {}
+                                self.SensorPacketsReceivedOrigId[packet.origTxNodeId][packet.seq] = 0
+                                if not packet.origTxNodeId in self.SensorPacketsDelays.keys():
+                                    self.SensorPacketsDelays[packet.origTxNodeId] = []
+                                self.SensorPacketsDelays[packet.origTxNodeId].append(self.env.now - packet.genTime)
+                            self.SensorPacketsReceived[packet.seq] += 1
+                            self.SensorPacketsReceivedOrigId[packet.origTxNodeId][packet.seq] += 1
+                        
+                        elif orginTxNode.simRole == "Control_Center":
+                            if not packet.seq in self.BroadcastPacketsReceived.keys():
+                                self.BroadcastPacketsReceived[packet.seq] = 0
+                                if not packet.origTxNodeId in self.BroadcastPacketsDelays.keys():
+                                    self.BroadcastPacketsDelays[packet.origTxNodeId] = []
+                                self.BroadcastPacketsDelays[packet.origTxNodeId].append(self.env.now - packet.genTime)
+                            self.BroadcastPacketsReceived[packet.seq] += 1
+                        
+                        elif orginTxNode.simRole == "DM":
+                            if not packet.seq in self.DMPacketsReceived.keys():
+                                self.DMPacketsReceived[packet.seq] = 0
+                                if not packet.origTxNodeId in self.DMPacketsReceivedOrigId.keys():
+                                    self.DMPacketsReceivedOrigId[packet.origTxNodeId] = {}
+                                self.DMPacketsReceivedOrigId[packet.origTxNodeId][packet.seq] = 0
+                                if not packet.origTxNodeId in self.DMPacketsDelays.keys():
+                                    self.DMPacketsDelays[packet.origTxNodeId] = []
+                                self.DMPacketsDelays[packet.origTxNodeId].append(self.env.now - packet.genTime)
+                            self.DMPacketsReceived[packet.seq] += 1
+                            self.DMPacketsReceivedOrigId[packet.origTxNodeId][packet.seq] += 1
+                    else:
+                        if self.simRole == "Sensor":
+                            if not packet.seq in self.SensorPacketsAcked.keys():
+                                self.SensorPacketsAcked[packet.seq] = 0
+                                self.ACKPacketsDelays.append(self.env.now - packet.genTime)
+                            self.SensorPacketsAcked[packet.seq] += 1
+                        elif self.simRole == "DM":
+                            if not packet.seq in self.DMPacketsAcked.keys():
+                                self.DMPacketsAcked[packet.seq] = 0
+                                self.ACKPacketsDelays.append(self.env.now - packet.genTime)
+                            self.DMPacketsAcked[packet.seq] += 1
                 else:
                     if packet.hopLimit > 1:
                         if not self.isClientMute and packet.next_hop == self.nodeid:

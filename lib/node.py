@@ -28,6 +28,7 @@ class MeshNode:
             self.isClientMute = nodeConfig['isClientMute']
             self.hopLimit = nodeConfig['hopLimit']
             self.antennaGain = nodeConfig['antennaGain']
+            self.simRole = nodeConfig.get('simRole', 'Sensor')  # Default to 'Sensor' if not specified
         else:
             self.x, self.y = find_random_position(self.conf, nodes)
             self.z = self.conf.HM
@@ -61,13 +62,31 @@ class MeshNode:
         self.lastBroadcastX = self.x
         self.lastBroadcastY = self.y
         self.lastBroadcastTime = 0
+
+        self.numberOfSensorPacketsCreated = {}
+        self.SensorPacketsReceived = {}
+        self.SensorPacketsReceivedOrigId={}
+        self.SensorPacketsAcked ={}
+        self.SensorPacketsDelays={}
+
+        self.numberOfBroadcastPacketsCreated = 0
+        self.BroadcastPacketsReceived = {}
+        self.BroadcastPacketsDelays ={}
+
+        self.numberOfDMPacketsCreated = {}
+        self.DMPacketsReceived = {}
+        self.DMPacketsAcked ={}
+        self.DMPacketsDelays = {}
+        self.DMPacketsReceivedOrigId = {}
+
+        self.ACKPacketsDelays = []
         # track total transmit time for the last 6 buckets (each is 10s in firmware logic)
         self.channelUtilization = [0] * self.conf.CHANNEL_UTILIZATION_PERIODS  # each entry is ms spent on air in that interval
         self.channelUtilizationIndex = 0  # which "bucket" is current
         self.prevTxAirUtilization = 0.0   # how much total tx air-time had been used at last sample
 
         env.process(self.track_channel_utilization(env))
-        if not self.isRepeater:  # repeaters don't generate messages themselves
+        if (not self.isRepeater) and (not self.isRouter):  # repeaters don't generate messages themselves
             env.process(self.generate_message())
         env.process(self.receive(self.bc_pipe.get_output_conn()))
         self.transmitter = simpy.Resource(env, 1)
@@ -178,52 +197,65 @@ class MeshNode:
 
     def generate_message(self):
         while True:
-            # Returns -1 if we don't make it before the sim ends
-            nextGen = self.get_next_time(self.period)
-            # do not generate a message near the end of the simulation (otherwise flooding cannot finish in time)
-            if nextGen >= 0:
+            if self.simRole == "Sensor":
+                nextGen = self.get_next_time(4*60*1000)
+                if nextGen < 0:  # do not generate message near the end of the simulation
+                    break
                 yield self.env.timeout(nextGen)
+                destId = 0
+                if not destId in self.numberOfSensorPacketsCreated.keys():
+                    self.numberOfSensorPacketsCreated[destId] = 0
+                self.numberOfSensorPacketsCreated[destId] += 1
+            elif self.simRole == "Control_Center":
+                nextGen = self.get_next_time(10*60*1000)
+                if nextGen < 0:  # do not generate message near the end of the simulation
+                    break
+                yield self.env.timeout(nextGen)
+                destId = NODENUM_BROADCAST
+                self.numberOfBroadcastPacketsCreated += 1
+            elif self.simRole == "DM":
+                nextGen = self.get_next_time(1*60*1000)
+                if nextGen < 0:  # do not generate message near the end of the simulation
+                    break
+                yield self.env.timeout(nextGen)
+                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if ((self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center")) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
+                if not destId in self.numberOfDMPacketsCreated.keys():
+                    self.numberOfDMPacketsCreated[destId] = 0
+                self.numberOfDMPacketsCreated[destId] += 1
 
-                if self.conf.DMs:
-                    destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if i is not self.nodeid])
+            p = self.send_packet(destId)
+            while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
+                retransmissionMsec = get_retransmission_msec(self, p)
+                yield self.env.timeout(retransmissionMsec)
+                ackReceived = False  # check whether you received an ACK on the transmitted message
+                minRetransmissions = self.conf.maxRetransmission
+                for packetSent in self.packets:
+                    if packetSent.origTxNodeId == self.nodeid and packetSent.seq == p.seq:
+                        if packetSent.retransmissions < minRetransmissions:
+                            minRetransmissions = packetSent.retransmissions
+                        if packetSent.ackReceived:
+                            ackReceived = True
+                if ackReceived:
+                    self.verboseprint('Node', self.nodeid, 'received ACK on generated message with seq. nr.', p.seq)
+                    break
                 else:
-                    destId = NODENUM_BROADCAST
-
-                p = self.send_packet(destId)
-
-                while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
-                    retransmissionMsec = get_retransmission_msec(self, p)
-                    yield self.env.timeout(retransmissionMsec)
-
-                    ackReceived = False  # check whether you received an ACK on the transmitted message
-                    minRetransmissions = self.conf.maxRetransmission
-                    for packetSent in self.packets:
-                        if packetSent.origTxNodeId == self.nodeid and packetSent.seq == p.seq:
-                            if packetSent.retransmissions < minRetransmissions:
-                                minRetransmissions = packetSent.retransmissions
-                            if packetSent.ackReceived:
-                                ackReceived = True
-                    if ackReceived:
-                        self.verboseprint('Node', self.nodeid, 'received ACK on generated message with seq. nr.', p.seq)
-                        break
-                    else:
-                        if minRetransmissions > 0:  # generate new packet with same sequence number
-                            if self.conf.Packet_Version == 2:
-                                ############ AODV version ############
-                                pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
-                                pNew.retransmissions = minRetransmissions - 1
-                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
-                                self.packets.append(pNew)
-                                self.env.process(self.transmit(pNew))
-                            else:
-                                pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
+                    if minRetransmissions > 0:  # generate new packet with same sequence number
+                        if self.conf.Packet_Version == 2:
+                            ############ AODV version ############
+                            pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
                             pNew.retransmissions = minRetransmissions - 1
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                         else:
-                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'reliable send of', p.seq, 'failed.')
-                            break
+                            pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
+                        pNew.retransmissions = minRetransmissions - 1
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
+                        self.packets.append(pNew)
+                        self.env.process(self.transmit(pNew))
+                    else:
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'reliable send of', p.seq, 'failed.')
+                        break
             else:  # do not send this message anymore, since it is close to the end of the simulation
                 break
 
