@@ -48,3 +48,4 @@ nodeLanguageServer/**
 nodeLanguageServer.*/**
 dist/**
 program
+venv
