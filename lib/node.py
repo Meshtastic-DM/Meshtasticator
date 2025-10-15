@@ -28,7 +28,7 @@ class MeshNode:
             self.isClientMute = nodeConfig['isClientMute']
             self.hopLimit = nodeConfig['hopLimit']
             self.antennaGain = nodeConfig['antennaGain']
-            self.simRole = nodeConfig.get('simRole', 'Sensor')  # Default to 'Sensor' if not specified
+            self.simRole = nodeConfig.get('simRole', 'DM')  # Default to 'DM' if not specified
         else:
             self.x, self.y = find_random_position(self.conf, nodes)
             self.z = self.conf.HM
@@ -249,10 +249,10 @@ class MeshNode:
                             self.env.process(self.transmit(pNew))
                         else:
                             pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
-                        pNew.retransmissions = minRetransmissions - 1
-                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
-                        self.packets.append(pNew)
-                        self.env.process(self.transmit(pNew))
+                            pNew.retransmissions = minRetransmissions - 1
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
+                            self.packets.append(pNew)
+                            self.env.process(self.transmit(pNew))
                     else:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'reliable send of', p.seq, 'failed.')
                         break
@@ -295,6 +295,10 @@ class MeshNode:
                 self.isTransmitting = False
             else:  # received ACK: abort transmit, remove from packets generated
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'in the meantime received ACK, abort packet with seq. nr', packet.seq)
+                for p in self.packets:
+                    if p.seq == packet.seq and p.origTxNodeId == self.nodeid and p != packet:
+                        p.ackReceived = True
+                        break
                 self.packets.remove(packet)
 
     def receive(self, in_pipe):
@@ -374,3 +378,6 @@ class MeshNode:
                             self.env.process(self.transmit(pNew))
                 else:
                     self.droppedByDelay += 1
+
+#Todo:
+#packet missing issue is not with the sim time, it depends on any reason need to look into this tomorrow

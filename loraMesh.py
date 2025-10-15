@@ -250,6 +250,20 @@ for n in nodes:
     BroadcastPacketsExtra[n.nodeid] = sum([count - 1 for count in n.BroadcastPacketsReceived.values() if count > 1])  # count extra packets received
     TotalCreatedPackets += n.numberOfBroadcastPacketsCreated
 
+def sort_nested_dictionary(nested_dict):
+    """Sort both outer and inner dictionaries by keys"""
+    return {
+        outer_key: dict(sorted(inner_dict.items()))
+        for outer_key, inner_dict in sorted(nested_dict.items())
+    }
+CreatedDMPackets = sort_nested_dictionary(CreatedDMPackets)
+RecivedDMPackets = sort_nested_dictionary(RecivedDMPackets)
+CreatedSensorPackets = sort_nested_dictionary(CreatedSensorPackets)
+RecivedSensorPackets = sort_nested_dictionary(RecivedSensorPackets)
+RecivedBroadcastPackets = dict(sorted(RecivedBroadcastPackets.items()))
+BroadcastPacketsExtra = dict(sorted(BroadcastPacketsExtra.items()))
+DMPacketsExtra = sort_nested_dictionary(DMPacketsExtra)
+SensorPacketsExtra = sort_nested_dictionary(SensorPacketsExtra)
 print("Number of DM packets created by each node:", CreatedDMPackets)
 print("Number of DM packets received by each node:", RecivedDMPackets)
 print("Number of sensor packets created by each node:", CreatedSensorPackets)
@@ -540,6 +554,7 @@ def save_nested_dict_to_csv(data, filename):
             for inner, values in inner_dict.items():
                 for v in values:
                     writer.writerow([outer, inner, v])
+
 
 print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
 print("DM packets delay arrays:", dmPacketsDelayArrays)

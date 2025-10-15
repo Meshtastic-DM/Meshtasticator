@@ -261,10 +261,10 @@ class MeshNode_AODV(MeshNode):
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'with delay', round(self.env.now - packet.genTime, 2))
                 self.delays.append(self.env.now - packet.genTime)
                 if packet.is_rreq:
-                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREQ from', packet.origTxNodeId, 'to', packet.destId, 'RREQ_ID', packet.rreq_id)
                         self.handle_rreq(packet)
                 elif packet.is_rrep:
-                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREP from', packet.txNodeId, 'for', packet.origTxNodeId)
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREP from', packet.origTxNodeId, 'to', packet.destId, 'RREQ_ID', packet.rreq_id)
                         self.handle_rrep(packet)
                 elif packet.is_rerr:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RERR for', packet.destId)
@@ -331,7 +331,7 @@ class MeshNode_AODV(MeshNode):
                                 self.ACKPacketsDelays.append(self.env.now - packet.genTime)
                             self.DMPacketsAcked[packet.seq] += 1
                 else:
-                    if packet.hopLimit > 1:
+                    if packet.hopLimit > 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq)
                             next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId else None
