@@ -379,5 +379,60 @@ class MeshNode:
                 else:
                     self.droppedByDelay += 1
 
+                if p.destId == self.nodeid or p.destId == NODENUM_BROADCAST:
+                    if not p.isAck:
+                        orginTxNodeId = p.origTxNodeId
+                        for n in self.nodes:
+                            if n.nodeid == orginTxNodeId:
+                                orginTxNode = n
+                                break
+                        if orginTxNode.simRole == 'Sensor':
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is a Control node receiving a packet from Sensor node', orginTxNodeId)
+                            if not p.seq in self.SensorPacketsReceived.keys():
+                                self.SensorPacketsReceived[p.seq] = 0
+                                if not p.origTxNodeId in self.SensorPacketsReceivedOrigId.keys():
+                                    self.SensorPacketsReceivedOrigId[p.origTxNodeId] = {}
+                                self.SensorPacketsReceivedOrigId[p.origTxNodeId][p.seq] = 0
+                                if not p.origTxNodeId in self.SensorPacketsDelays.keys():
+                                    self.SensorPacketsDelays[p.origTxNodeId] = []
+                                self.SensorPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
+                            self.SensorPacketsReceived[p.seq] += 1
+                            self.SensorPacketsReceivedOrigId[p.origTxNodeId][p.seq] += 1
+                        
+                        elif orginTxNode.simRole == "Control_Center":
+                            if not p.seq in self.BroadcastPacketsReceived.keys():
+                                self.BroadcastPacketsReceived[p.seq] = 0
+                                if not p.origTxNodeId in self.BroadcastPacketsDelays.keys():
+                                    self.BroadcastPacketsDelays[p.origTxNodeId] = []
+                                self.BroadcastPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
+                            self.BroadcastPacketsReceived[p.seq] += 1
+                        
+                        elif orginTxNode.simRole == "DM":
+                            if not p.seq in self.DMPacketsReceived.keys():
+                                self.DMPacketsReceived[p.seq] = 0
+                                if not p.origTxNodeId in self.DMPacketsReceivedOrigId.keys():
+                                    self.DMPacketsReceivedOrigId[p.origTxNodeId] = {}
+                                self.DMPacketsReceivedOrigId[p.origTxNodeId][p.seq] = 0
+                                if not p.origTxNodeId in self.DMPacketsDelays.keys():
+                                    self.DMPacketsDelays[p.origTxNodeId] = []
+                                self.DMPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
+                            self.DMPacketsReceived[p.seq] += 1
+                            self.DMPacketsReceivedOrigId[p.origTxNodeId][p.seq] += 1
+                    else:
+                        if self.simRole == "Sensor":
+                            if not p.seq in self.SensorPacketsAcked.keys():
+                                self.SensorPacketsAcked[p.seq] = 0
+                                self.ACKPacketsDelays.append(self.env.now - p.genTime)
+                            self.SensorPacketsAcked[p.seq] += 1
+                        elif self.simRole == "DM":
+                            if not p.seq in self.DMPacketsAcked.keys():
+                                self.DMPacketsAcked[p.seq] = 0
+                                self.ACKPacketsDelays.append(self.env.now - p.genTime)
+                            self.DMPacketsAcked[p.seq] += 1
+    
+    def get_route_table(self):
+        return {}
+# End of lib/node.py        
+
 #Todo:
 #packet missing issue is not with the sim time, it depends on any reason need to look into this tomorrow

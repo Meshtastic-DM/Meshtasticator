@@ -92,10 +92,16 @@ asymmetricLinks = 0
 noLinks = 0
 
 graph = Graph(conf)
-for i in range(conf.NR_NODES):
-	node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
-	nodes.append(node)
-	graph.add_node(node)
+if conf.SELECTED_ROUTER_TYPE == "AODV":
+	for i in range(conf.NR_NODES):
+		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
+else:
+	for i in range(conf.NR_NODES):
+		node = MeshNode(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
 
 totalPairs, symmetricLinks, asymmetricLinks, noLinks = setup_asymmetric_links(conf, nodes)
 
@@ -162,6 +168,8 @@ for node in nodes:
 		print(f"\nNode {node.nodeid} route table:")
 		for dest, entry in routeTable.items():
 			print(f"  Dest: {dest}, Next Hop: {entry['nextHop']}, Hop Count: {entry['hopCount']}, Seq: {entry['destSeqNum']}")
+	else:
+		print(f"\nNode {node.nodeid} has an empty route table.")
 
 if conf.PLOT:
 	plot_schedule(conf, packets, messages)
