@@ -92,7 +92,7 @@ asymmetricLinks = 0
 noLinks = 0
 
 graph = Graph(conf)
-if conf.SELECTED_ROUTER_TYPE == "AODV":
+if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV:
 	for i in range(conf.NR_NODES):
 		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 		nodes.append(node)
@@ -163,6 +163,7 @@ if conf.MOVEMENT_ENABLED:
 
 graph.save()
 for node in nodes:
+	print(node)
 	routeTable = node.get_route_table()
 	if len(routeTable) > 0:
 		print(f"\nNode {node.nodeid} route table:")

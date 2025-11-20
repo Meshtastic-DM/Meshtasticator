@@ -303,6 +303,18 @@ class MeshNode_AODV(MeshNode):
                         elif orginTxNode.simRole == "Control_Center":
                             if not packet.seq in self.BroadcastPacketsReceived.keys():
                                 self.BroadcastPacketsReceived[packet.seq] = 0
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received broadcast packet', packet.seq)
+                                pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
+                                pNew.hopLimit = packet.hopLimit - 1
+                                pNew.next_hop = None
+                                pNew.hop_count = packet.hop_count
+                                pNew.ttl = packet.ttl
+                                pNew.is_rreq = packet.is_rreq
+                                pNew.is_rrep = packet.is_rrep
+                                pNew.is_rerr = packet.is_rerr
+                                self.packets.append(pNew)
+                                self.env.process(self.transmit(pNew))
+                                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted broadcast packet', pNew.seq)
                                 if not packet.origTxNodeId in self.BroadcastPacketsDelays.keys():
                                     self.BroadcastPacketsDelays[packet.origTxNodeId] = []
                                 self.BroadcastPacketsDelays[packet.origTxNodeId].append(self.env.now - packet.genTime)
@@ -330,6 +342,19 @@ class MeshNode_AODV(MeshNode):
                                 self.DMPacketsAcked[packet.seq] = 0
                                 self.ACKPacketsDelays.append(self.env.now - packet.genTime)
                             self.DMPacketsAcked[packet.seq] += 1
+                    # if packet.destId == NODENUM_BROADCAST and not self.isClientMute:
+                    #         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received broadcast packet', packet.seq)
+                    #         pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
+                    #         pNew.hopLimit = packet.hopLimit - 1
+                    #         pNew.next_hop = None
+                    #         pNew.hop_count = packet.hop_count
+                    #         pNew.ttl = packet.ttl
+                    #         pNew.is_rreq = packet.is_rreq
+                    #         pNew.is_rrep = packet.is_rrep
+                    #         pNew.is_rerr = packet.is_rerr
+                    #         self.packets.append(pNew)
+                    #         self.env.process(self.transmit(pNew))
+                    #         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted broadcast packet', pNew.seq)
                 else:
                     if packet.hopLimit > 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
@@ -346,6 +371,19 @@ class MeshNode_AODV(MeshNode):
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted packet', pNew.seq, 'to', pNew.destId)
+                        elif packet.destId == NODENUM_BROADCAST and not self.isClientMute:
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received broadcast packet', packet.seq)
+                            pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
+                            pNew.hopLimit = packet.hopLimit - 1
+                            pNew.next_hop = None
+                            pNew.hop_count = packet.hop_count
+                            pNew.ttl = packet.ttl
+                            pNew.is_rreq = packet.is_rreq
+                            pNew.is_rrep = packet.is_rrep
+                            pNew.is_rerr = packet.is_rerr
+                            self.packets.append(pNew)
+                            self.env.process(self.transmit(pNew))
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted broadcast packet', pNew.seq)
                     else:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'dropped packet', packet.seq, 'due to hop limit reached')
                 for sentPacket in self.packets:
