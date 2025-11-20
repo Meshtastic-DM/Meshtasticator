@@ -190,7 +190,7 @@ class MeshNode:
     def get_next_time(self, period):
         nextGen = self.nodeRng.expovariate(1.0 / float(period))
         # do not generate message near the end of the simulation (otherwise flooding cannot finish in time)
-        if self.env.now+nextGen + self.hopLimit * airtime(self.conf, self.conf.SFMODEM[self.conf.MODEM], self.conf.CRMODEM[self.conf.MODEM], self.conf.PACKETLENGTH, self.conf.BWMODEM[self.conf.MODEM]) < self.conf.SIMTIME:
+        if self.env.now+nextGen + self.hopLimit * airtime(self.conf, self.conf.SFMODEM[self.conf.MODEM], self.conf.CRMODEM[self.conf.MODEM], self.conf.PACKETLENGTH, self.conf.BWMODEM[self.conf.MODEM]) + 5*self.conf.ONE_MIN_INTERVAL < self.conf.SIMTIME:
             return nextGen
         return -1
     
@@ -257,7 +257,7 @@ class MeshNode:
                     break
                 else:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
-                        if self.conf.Packet_Version == 2:
+                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV:
                             ############ AODV version ############
                             pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
                             pNew.retransmissions = minRetransmissions - 1
@@ -273,8 +273,6 @@ class MeshNode:
                     else:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'reliable send of', p.seq, 'failed.')
                         break
-                            self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'reliable send of', p.seq, 'failed.')
-                            break
             else:  # do not send this message anymore, since it is close to the end of the simulation
                 break
 
