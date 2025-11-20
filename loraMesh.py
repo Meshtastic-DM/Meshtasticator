@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
+import csv
 import os
 import sys
 import random
 
+from matplotlib import pyplot as plt
 import yaml
 import simpy
 import numpy as np
 
+from lib import phy
 from lib.common import Graph, plot_schedule, gen_scenario, run_graph_updates, setup_asymmetric_links
 from lib.config import Config
 from lib.discrete_event import BroadcastPipe
 from lib.node import MeshNode
+from lib.node_aodv import MeshNode_AODV
 
 VERBOSE = True
 conf = Config()
@@ -88,10 +92,16 @@ asymmetricLinks = 0
 noLinks = 0
 
 graph = Graph(conf)
-for i in range(conf.NR_NODES):
-	node = MeshNode(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
-	nodes.append(node)
-	graph.add_node(node)
+if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV:
+	for i in range(conf.NR_NODES):
+		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
+else:
+	for i in range(conf.NR_NODES):
+		node = MeshNode(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
 
 totalPairs, symmetricLinks, asymmetricLinks, noLinks = setup_asymmetric_links(conf, nodes)
 
@@ -152,6 +162,413 @@ if conf.MOVEMENT_ENABLED:
 	print("Number of moving nodes w/ GPS:", gpsEnabled)
 
 graph.save()
+for node in nodes:
+	print(node)
+	routeTable = node.get_route_table()
+	if len(routeTable) > 0:
+		print(f"\nNode {node.nodeid} route table:")
+		for dest, entry in routeTable.items():
+			print(f"  Dest: {dest}, Next Hop: {entry['nextHop']}, Hop Count: {entry['hopCount']}, Seq: {entry['destSeqNum']}")
+	else:
+		print(f"\nNode {node.nodeid} has an empty route table.")
 
 if conf.PLOT:
 	plot_schedule(conf, packets, messages)
+
+sensorPacketMeanDelays = {}
+sensorPacketsDelayArrays = {}
+dmPacketMeanDelays = {}
+dmPacketsDelayArrays = {}
+brocastPacketMeanDelays = {}
+brocastPacketsDelayArrays = {}
+
+for n in nodes:
+	sensorPacketsDelays = n.SensorPacketsDelays
+	for originTxNodeId, delays in sensorPacketsDelays.items():
+		if delays:
+			if originTxNodeId not in sensorPacketMeanDelays:
+				sensorPacketMeanDelays[originTxNodeId] = {}
+				sensorPacketsDelayArrays[originTxNodeId] = {}
+			meanDelay = np.nanmean(delays)
+			sensorPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			sensorPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
+
+			print(f"Average delay of sensor packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
+
+	broadCastPacketsDelays = n.BroadcastPacketsDelays
+	for originTxNodeId, delays in broadCastPacketsDelays.items():
+		if delays:
+			if originTxNodeId not in brocastPacketMeanDelays:
+				brocastPacketMeanDelays[originTxNodeId] = {}
+				brocastPacketsDelayArrays[originTxNodeId] = {}
+			meanDelay = np.nanmean(delays)
+			brocastPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			brocastPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
+			print(f"Average delay of broadcast packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
+	dmPacketsDelays = n.DMPacketsDelays
+	for originTxNodeId, delays in dmPacketsDelays.items():
+		if delays:
+			if originTxNodeId not in dmPacketMeanDelays:
+				dmPacketMeanDelays[originTxNodeId] = {}
+				dmPacketsDelayArrays[originTxNodeId] = {}
+			meanDelay = np.nanmean(delays)
+			dmPacketMeanDelays[originTxNodeId][n.nodeid] = meanDelay
+			dmPacketsDelayArrays[originTxNodeId][n.nodeid] = delays
+			print(f"Average delay of DM packets from node {originTxNodeId} to node {n.nodeid} (ms):", round(meanDelay, 2))
+	
+CreatedDMPackets = {}
+RecivedDMPackets = {}
+CreatedSensorPackets = {}
+RecivedSensorPackets = {}
+RecivedBroadcastPackets = {}
+BroadcastPacketsExtra = {}
+DMPacketsExtra = {}
+SensorPacketsExtra = {}
+TotalCreatedPackets = 0
+
+for n in nodes:
+    if n.simRole == "Control_Center":
+        for origId, packet in n.SensorPacketsReceivedOrigId.items():
+            if origId not in RecivedSensorPackets:
+                RecivedSensorPackets[origId] = {}
+                SensorPacketsExtra[origId] = {}
+            RecivedSensorPackets[origId][n.nodeid] = len(packet.keys())
+            SensorPacketsExtra[origId][n.nodeid] = sum([count - 1 for count in packet.values() if count > 1])  # count extra packets received
+
+    if n.simRole == "DM" or n.simRole == "Control_Center":
+        if n.nodeid not in CreatedDMPackets:
+            CreatedDMPackets[n.nodeid] = {}
+        for destId, count in n.numberOfDMPacketsCreated.items():
+            CreatedDMPackets[n.nodeid][destId] = count
+
+        for origId, packet in n.DMPacketsReceivedOrigId.items():
+            if origId not in RecivedDMPackets:
+                RecivedDMPackets[origId] = {}
+                DMPacketsExtra[origId] = {}
+            RecivedDMPackets[origId][n.nodeid] = len(packet.keys())
+            DMPacketsExtra[origId][n.nodeid] = sum([count - 1 for count in packet.values() if count > 1])  # count extra packets received
+
+    elif n.simRole == "Sensor":
+        if n.nodeid not in CreatedSensorPackets:
+            CreatedSensorPackets[n.nodeid] = {}
+        for destId, count in n.numberOfSensorPacketsCreated.items():
+            CreatedSensorPackets[n.nodeid][destId] = count
+
+    # These lines apply to all nodes
+    RecivedBroadcastPackets[n.nodeid] = len(n.BroadcastPacketsReceived.keys())
+    BroadcastPacketsExtra[n.nodeid] = sum([count - 1 for count in n.BroadcastPacketsReceived.values() if count > 1])  # count extra packets received
+    TotalCreatedPackets += n.numberOfBroadcastPacketsCreated
+
+def sort_nested_dictionary(nested_dict):
+    """Sort both outer and inner dictionaries by keys"""
+    return {
+        outer_key: dict(sorted(inner_dict.items()))
+        for outer_key, inner_dict in sorted(nested_dict.items())
+    }
+CreatedDMPackets = sort_nested_dictionary(CreatedDMPackets)
+RecivedDMPackets = sort_nested_dictionary(RecivedDMPackets)
+CreatedSensorPackets = sort_nested_dictionary(CreatedSensorPackets)
+RecivedSensorPackets = sort_nested_dictionary(RecivedSensorPackets)
+RecivedBroadcastPackets = dict(sorted(RecivedBroadcastPackets.items()))
+BroadcastPacketsExtra = dict(sorted(BroadcastPacketsExtra.items()))
+DMPacketsExtra = sort_nested_dictionary(DMPacketsExtra)
+SensorPacketsExtra = sort_nested_dictionary(SensorPacketsExtra)
+print("Number of DM packets created by each node:", CreatedDMPackets)
+print("Number of DM packets received by each node:", RecivedDMPackets)
+print("Number of sensor packets created by each node:", CreatedSensorPackets)
+print("Number of sensor packets received by each node:", RecivedSensorPackets)
+print("Total number of broadcast packets created by all nodes:", TotalCreatedPackets)
+print("Number of broadcast packets received by each node:", RecivedBroadcastPackets)
+
+print("Number of extra broadcast packets received by each node:", BroadcastPacketsExtra)
+print("Number of extra DM packets received by each node:", DMPacketsExtra)
+print("Number of extra sensor packets received by each node:", SensorPacketsExtra)
+
+print("Sensor packets delays:", sensorPacketMeanDelays)
+print("DM packets delays:", dmPacketMeanDelays)
+print("Broadcast packets delays:", brocastPacketMeanDelays)
+
+print("Range of nodes is",phy.MAXRANGE, "m")
+
+
+N = len(nodes)
+realiabilitySensor = [0 for _ in range(N)]
+dest = 0
+for source in range(N):
+	if source != dest:
+		if source in CreatedSensorPackets.keys(): 
+			if dest in CreatedSensorPackets[source].keys():
+				if source in RecivedSensorPackets.keys():
+					if dest in RecivedSensorPackets[source].keys():
+						realiabilitySensor[source] = RecivedSensorPackets[source][dest] / CreatedSensorPackets[source][dest]
+				else:
+					realiabilitySensor[source] = 0
+			else:
+				realiabilitySensor[source] = None
+		else:
+			realiabilitySensor[source] = None
+
+
+realibilityMatrix = np.array([val if val is not None else np.nan for val in realiabilitySensor], dtype=float)
+
+print("Reliability of sensor packets from each node to node 0:", realibilityMatrix)
+
+x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
+
+plt.figure(figsize=(8, 6))
+bars = plt.bar(x, realibilityMatrix, color='skyblue', edgecolor='black')
+
+# Add value labels on top of each bar
+for i, val in enumerate(realibilityMatrix):
+    plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+
+plt.xlabel("Source Node ID")
+plt.ylabel("Reliability to Destination 0")
+plt.title("Reliability from Sensors to Destination Node 0")
+plt.xticks(x, [f"Src {i}" for i in x])
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+realiabilityDm = [[0 for _ in range(N)] for _ in range(N)]
+for source in range(N):
+	for dest in range(N):
+		if source != dest:
+			if source in DMPacketsExtra.keys():
+				if dest in DMPacketsExtra[source].keys():
+					realiabilityDm[source][dest] = RecivedDMPackets[source][dest] / CreatedDMPackets[source][dest]
+				else:
+					realiabilityDm[source][dest] = None
+			else:
+				realiabilityDm[source][dest] = None
+
+DMmatrix = np.array([[val if val is not None else np.nan for val in row] for row in realiabilityDm], dtype=float)
+np.fill_diagonal(DMmatrix, np.nan)
+# Plot with annotations
+plt.figure(figsize=(8, 6))
+plt.imshow(DMmatrix, cmap='YlGnBu', interpolation='nearest')
+plt.colorbar(label='Reliability')
+
+for i in range(N):
+    for j in range(N):
+        if not np.isnan(DMmatrix[i][j]):
+            plt.text(j, i, f"{DMmatrix[i][j]:.2f}", ha='center', va='center', color='black')
+
+plt.title("DM Packet Delivery Reliability Matrix")
+plt.xlabel("Destination Node ID")
+plt.ylabel("Source Node ID")
+plt.xticks(ticks=np.arange(N), labels=np.arange(N))
+plt.yticks(ticks=np.arange(N), labels=np.arange(N))
+plt.grid(False)
+plt.tight_layout()
+plt.show()
+
+realibilityBroadcast = [0 for _ in range(N)]
+
+source = 0
+for dest in range(N):
+	if source != dest:
+		realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
+	else:
+		realibilityBroadcast[dest] = None
+
+realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(realibilityBroadcast):
+	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Destination Node ID")
+plt.ylabel("Reliability of Broadcast Packets")
+plt.title("Broadcast Packet Delivery Reliability")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+delaySensor = [0 for _ in range(N)]
+dest = 0
+for source in range(N):
+	if source != dest:
+		if source in sensorPacketMeanDelays.keys():
+			if dest in sensorPacketMeanDelays[source].keys():
+				delaySensor[source] = sensorPacketMeanDelays[source][dest]
+			else:
+				delaySensor[source] = None
+		else:
+			delaySensor[source] = None
+	else:
+		delaySensor[source] = None
+delaySensorMatrix = np.array([val if val is not None else np.nan for val in delaySensor], dtype=float)
+
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(delaySensorMatrix)), delaySensorMatrix, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(delaySensorMatrix):
+	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Source Node ID")
+plt.ylabel("Average Delay of Sensor Packets to Destination 0 (ms)")
+plt.title("Sensor Packet Delay to Destination 0")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+delayDM = [[0 for _ in range(N)] for _ in range(N)]
+for source in range(N):
+	for dest in range(N):
+		if source != dest:
+			if source in dmPacketMeanDelays.keys():
+				if dest in dmPacketMeanDelays[source].keys():
+					delayDM[source][dest] = dmPacketMeanDelays[source][dest]
+				else:
+					delayDM[source][dest] = None
+			else:
+				delayDM[source][dest] = None
+		else:
+			delayDM[source][dest] = None
+delayDMMatrix = np.array([[val if val is not None else np.nan for val in row] for row in delayDM], dtype=float)
+np.fill_diagonal(delayDMMatrix, np.nan)
+plt.figure(figsize=(8, 6))
+plt.imshow(delayDMMatrix, cmap='YlGnBu', interpolation='nearest')
+plt.colorbar(label='Average Delay (ms)')
+for i in range(N):
+	for j in range(N):
+		if not np.isnan(delayDMMatrix[i][j]):
+			plt.text(j, i, f"{delayDMMatrix[i][j]:.2f}", ha='center', va='center', color='black')
+plt.title("DM Packet Delay Matrix")
+plt.xlabel("Destination Node ID")
+plt.ylabel("Source Node ID")
+plt.xticks(ticks=np.arange(N), labels=np.arange(N))
+plt.yticks(ticks=np.arange(N), labels=np.arange(N))
+plt.grid(False)
+plt.tight_layout()
+plt.show()
+
+delayBroadcast = [0 for _ in range(N)]
+source = 0
+for dest in range(N):
+	if source != dest:
+		if source in brocastPacketMeanDelays.keys():
+			if dest in brocastPacketMeanDelays[source].keys():
+				delayBroadcast[dest] = brocastPacketMeanDelays[source][dest]
+			else:
+				delayBroadcast[dest] = None
+		else:
+			delayBroadcast[dest] = None
+	else:
+		delayBroadcast[dest] = None
+
+delayBroadcastMatrix = np.array([val if val is not None else np.nan for val in delayBroadcast], dtype=float)
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(delayBroadcastMatrix)), delayBroadcastMatrix, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(delayBroadcastMatrix):
+	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Destination Node ID")
+plt.ylabel("Average Delay of Broadcast Packets (ms)")
+plt.title("Broadcast Packet Delay")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+extraSensorPacketsRatio = [0 for _ in range(N)]
+dest = 0
+for source in range(N):
+	if source != dest:
+		if source in SensorPacketsExtra.keys():
+			if dest in SensorPacketsExtra[source].keys():
+				extraSensorPacketsRatio[source] = SensorPacketsExtra[source][dest] / CreatedSensorPackets[source][dest] if CreatedSensorPackets[source][dest] > 0 else 0
+			else:
+				extraSensorPacketsRatio[source] = None
+		else:
+			extraSensorPacketsRatio[source] = None
+	else:
+		extraSensorPacketsRatio[source] = None
+extraSensorPacketsRatio = np.array([val if val is not None else np.nan for val in extraSensorPacketsRatio], dtype=float)
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(extraSensorPacketsRatio)), extraSensorPacketsRatio, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(extraSensorPacketsRatio):
+	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Source Node ID")
+plt.ylabel("Extra Sensor Packets Ratio")
+plt.title("Extra Sensor Packets Ratio from Sources to Destination 0")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+extraDMPacketsRatio = [[0 for _ in range(N)] for _ in range(N)]
+for source in range(N):
+	for dest in range(N):
+		if source != dest:
+			if source in DMPacketsExtra.keys():
+				if dest in DMPacketsExtra[source].keys():
+					extraDMPacketsRatio[source][dest] = DMPacketsExtra[source][dest] / CreatedDMPackets[source][dest] if CreatedDMPackets[source][dest] > 0 else 0
+				else:
+					extraDMPacketsRatio[source][dest] = None
+			else:
+				extraDMPacketsRatio[source][dest] = None
+		else:
+			extraDMPacketsRatio[source][dest] = None
+extraDMPacketsRatio = np.array([[val if val is not None else np.nan for val in row] for row in extraDMPacketsRatio], dtype=float)
+np.fill_diagonal(extraDMPacketsRatio, np.nan)
+plt.figure(figsize=(8, 6))
+plt.imshow(extraDMPacketsRatio, cmap='YlGnBu', interpolation='nearest')
+plt.colorbar(label='Extra DM Packets Ratio')
+for i in range(N):
+	for j in range(N):
+		if not np.isnan(extraDMPacketsRatio[i][j]):
+			plt.text(j, i, f"{extraDMPacketsRatio[i][j]:.2f}", ha='center', va='center', color='black')
+plt.title("Extra DM Packets Ratio Matrix")
+plt.xlabel("Destination Node ID")
+plt.ylabel("Source Node ID")
+plt.xticks(ticks=np.arange(N), labels=np.arange(N))
+plt.yticks(ticks=np.arange(N), labels=np.arange(N))
+plt.grid(False)
+plt.tight_layout()
+plt.show()
+
+extraBroadcastPacketsRatio = [0 for _ in range(N)]
+source = 0
+for dest in range(N):
+	if source != dest:
+		if source in BroadcastPacketsExtra.keys():
+			extraBroadcastPacketsRatio[dest] = BroadcastPacketsExtra[dest] / TotalCreatedPackets if TotalCreatedPackets > 0 else 0
+		else:
+			extraBroadcastPacketsRatio[dest] = None
+	else:
+		extraBroadcastPacketsRatio[dest] = None
+extraBroadcastPacketsRatio = np.array([val if val is not None else np.nan for val in extraBroadcastPacketsRatio], dtype=float)
+plt.figure(figsize=(8, 6))
+plt.bar(range(len(extraBroadcastPacketsRatio)), extraBroadcastPacketsRatio, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(extraBroadcastPacketsRatio):
+	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Destination Node ID")
+plt.ylabel("Extra Broadcast Packets Ratio")
+plt.title("Extra Broadcast Packets Ratio from Source 0")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
+
+def save_nested_dict_to_csv(data, filename):
+    """
+    Save a nested dictionary of the form:
+    {outer: {inner: [values...]}} into a CSV file
+    """
+    with open(filename, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["source", "destination", "delay_value"])
+        for outer, inner_dict in data.items():
+            for inner, values in inner_dict.items():
+                for v in values:
+                    writer.writerow([outer, inner, v])
+
+
+print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
+print("DM packets delay arrays:", dmPacketsDelayArrays)
+print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
+
+save_nested_dict_to_csv(sensorPacketsDelayArrays, "sensor_packets_R.csv")
+save_nested_dict_to_csv(dmPacketsDelayArrays, "dm_packets_R.csv")
+save_nested_dict_to_csv(brocastPacketsDelayArrays, "broadcast_packets_R.csv")
