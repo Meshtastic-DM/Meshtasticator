@@ -6,7 +6,7 @@ class MeshPacket_AODV(MeshPacket):
     This class inherits from MeshPacket and adds attributes specific to AODV.
     """
     def __init__(self, conf, nodes, origTxNodeId, destId, txNodeId, plen, seq, genTime, 
-                 wantAck, isAck, requestId, now, verboseprint,
+                 wantAck, isAck, requestId, now, verboseprint, data=None,
                  # New parameters for AODV functionality
                  hop_count=0, ttl=64, rreq_id=None):
         
@@ -24,8 +24,11 @@ class MeshPacket_AODV(MeshPacket):
         self.is_rreq = False  # Flag to indicate if this is a RREQ packet
         self.is_rrep = False  # Flag to indicate if this is a RREP packet
         self.is_rerr = False  # Flag to indicate if this is a RERR packet
+        self.is_sdn_update = False  # Flag for SDN route update packets
 
         self.next_hop = None  # Next hop nodeId for the packet
+
+        self.data = data  # Payload data of the packet
         
     def increment_hop_count(self):
         """Increment the hop count by one"""

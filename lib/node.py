@@ -235,11 +235,12 @@ class MeshNode:
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
-                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if ((self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center")) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
+                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if ((self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center" or self.nodes[i].simRole == "sdn_node")) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
                 if not destId in self.numberOfDMPacketsCreated.keys():
                     self.numberOfDMPacketsCreated[destId] = 0
                 self.numberOfDMPacketsCreated[destId] += 1
-
+            elif self.simRole == "sdn_node":
+                return
             p = self.send_packet(destId)
             while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
                 retransmissionMsec = get_retransmission_msec(self, p)
@@ -257,7 +258,7 @@ class MeshNode:
                     break
                 else:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
-                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV:
+                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV:
                             ############ AODV version ############
                             pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
                             pNew.retransmissions = minRetransmissions - 1
