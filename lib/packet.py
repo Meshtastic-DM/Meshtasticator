@@ -53,6 +53,11 @@ class MeshPacket:
 		self.retransmissions = self.conf.maxRetransmission
 		self.ackReceived = False
 		self.hopLimit = self.tx_node.hopLimit
+		
+		# ZRP-specific fields
+		self.packet_type = "DATA"  # Can be "DATA", "HELLO", "RREQ", "RREP"
+		self.dest_target = None    # For RREQ/RREP packets
+		self.hop_count = 0         # For route discovery
 
 
 class MeshMessage:

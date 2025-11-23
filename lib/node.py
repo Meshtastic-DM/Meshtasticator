@@ -55,6 +55,13 @@ class MeshNode:
         self.rebroadcastPackets = 0
         self.isMoving = False
         self.gpsEnabled = False
+        
+        # ZRP-specific data structures
+        self.neighbors = {}  # {nodeId: last_heard_time}
+        self.routing_table = {}  # {destId: {nextHop: nodeId, hopCount: int, timestamp: time}}
+        self.zone_nodes = set()  # Nodes within zone radius
+        self.pending_route_requests = {}  # {destId: {seq: int, timestamp: time}}
+        self.route_request_cache = {}  # {(origId, destId, seq): timestamp} to prevent loops
         # Track last broadcast position/time
         self.lastBroadcastX = self.x
         self.lastBroadcastY = self.y
@@ -69,6 +76,11 @@ class MeshNode:
             env.process(self.generate_message())
         env.process(self.receive(self.bc_pipe.get_output_conn()))
         self.transmitter = simpy.Resource(env, 1)
+        
+        # Start ZRP-specific processes if ZRP is enabled
+        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
+            env.process(self.zrp_hello_process())
+            env.process(self.zrp_maintenance_process())
 
         # start mobility if enabled
         if self.conf.MOVEMENT_ENABLED and self.moveRng.random() <= self.conf.APPROX_RATIO_NODES_MOVING:
@@ -152,9 +164,110 @@ class MeshNode:
             # Wait until next move
             nextMove = self.get_next_time(self.conf.ONE_MIN_INTERVAL)
             if nextMove >= 0:
-                yield env.timeout(nextMove)
+                yield self.env.timeout(nextMove)
             else:
                 break
+    
+    def zrp_hello_process(self):
+        """Periodically send HELLO packets for neighbor discovery"""
+        while True:
+            yield self.env.timeout(self.conf.ZRP_HELLO_INTERVAL)
+            self.send_hello_packet()
+    
+    def zrp_maintenance_process(self):
+        """Periodic maintenance of neighbors and routing tables"""
+        while True:
+            yield self.env.timeout(self.conf.ZRP_NEIGHBOR_TIMEOUT // 2)
+            self.cleanup_stale_neighbors()
+            self.update_zone_nodes()
+    
+    def send_hello_packet(self):
+        """Send HELLO packet to announce presence"""
+        self.messageSeq["val"] += 1
+        messageSeq = self.messageSeq["val"]
+        hello_packet = MeshPacket(
+            self.conf, self.nodes, self.nodeid, NODENUM_BROADCAST, self.nodeid,
+            10, messageSeq, self.env.now, False, False, None, self.env.now, self.verboseprint
+        )
+        hello_packet.packet_type = "HELLO"
+        self.packets.append(hello_packet)
+        self.env.process(self.transmit(hello_packet))
+    
+    def cleanup_stale_neighbors(self):
+        """Remove neighbors that haven't been heard from recently"""
+        current_time = self.env.now
+        stale_neighbors = [nid for nid, last_time in self.neighbors.items() 
+                          if current_time - last_time > self.conf.ZRP_NEIGHBOR_TIMEOUT]
+        for nid in stale_neighbors:
+            del self.neighbors[nid]
+            # Remove routes through stale neighbors
+            routes_to_remove = [dest for dest, route in self.routing_table.items() 
+                              if route['nextHop'] == nid]
+            for dest in routes_to_remove:
+                del self.routing_table[dest]
+    
+    def update_zone_nodes(self):
+        """Update the set of nodes within zone radius"""
+        self.zone_nodes.clear()
+        self.zone_nodes.add(self.nodeid)  # Include self
+        # Add direct neighbors
+        for neighbor_id in self.neighbors.keys():
+            self.zone_nodes.add(neighbor_id)
+        # Add nodes reachable within zone radius using BFS
+        visited = set([self.nodeid])
+        queue = [(neighbor_id, 1) for neighbor_id in self.neighbors.keys()]
+        while queue:
+            node_id, hops = queue.pop(0)
+            if hops <= self.conf.ZRP_ZONE_RADIUS and node_id not in visited:
+                visited.add(node_id)
+                self.zone_nodes.add(node_id)
+                # Add this node's neighbors for next level
+                node = next((n for n in self.nodes if n.nodeid == node_id), None)
+                if node:
+                    for next_neighbor in node.neighbors.keys():
+                        if next_neighbor not in visited and hops + 1 <= self.conf.ZRP_ZONE_RADIUS:
+                            queue.append((next_neighbor, hops + 1))
+    
+    def zrp_route_discovery(self, dest_id):
+        """Initiate route discovery for destination outside zone"""
+        if dest_id in self.pending_route_requests:
+            return  # Already discovering route
+        
+        self.messageSeq["val"] += 1
+        seq = self.messageSeq["val"]
+        self.pending_route_requests[dest_id] = {'seq': seq, 'timestamp': self.env.now}
+        
+        # Send RREQ to zone border nodes
+        for border_node in self.get_zone_border_nodes():
+            rreq_packet = MeshPacket(
+                self.conf, self.nodes, self.nodeid, border_node, self.nodeid,
+                20, seq, self.env.now, False, False, None, self.env.now, self.verboseprint
+            )
+            rreq_packet.packet_type = "RREQ"
+            rreq_packet.dest_target = dest_id
+            rreq_packet.hop_count = 0
+            self.packets.append(rreq_packet)
+            self.env.process(self.transmit(rreq_packet))
+    
+    def get_zone_border_nodes(self):
+        """Get nodes at the border of the zone"""
+        border_nodes = set()
+        for node_id in self.zone_nodes:
+            node = next((n for n in self.nodes if n.nodeid == node_id), None)
+            if node:
+                for neighbor_id in node.neighbors.keys():
+                    if neighbor_id not in self.zone_nodes:
+                        border_nodes.add(node_id)
+                        break
+        return border_nodes
+    
+    def zrp_intrazone_route(self, dest_id):
+        """Find route within zone using proactive routing"""
+        if dest_id in self.routing_table:
+            route = self.routing_table[dest_id]
+            if self.env.now - route['timestamp'] < self.conf.ZRP_ROUTE_TIMEOUT:
+                return route['nextHop']
+        return None
 
     def send_packet(self, destId, type=""):
         # increment the shared counter
@@ -332,10 +445,54 @@ class MeshNode:
                     pAck = MeshPacket(self.conf, self.nodes, self.nodeid, p.origTxNodeId, self.nodeid, self.conf.ACKLENGTH, messageSeq, self.env.now, False, True, p.seq, self.env.now, self.verboseprint)
                     self.packets.append(pAck)
                     self.env.process(self.transmit(pAck))
+                # Handle special ZRP packets
+                if hasattr(p, 'packet_type'):
+                    if p.packet_type == "HELLO":
+                        self.neighbors[p.txNodeId] = self.env.now
+                        self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'updated neighbor', p.txNodeId)
+                        continue
+                    elif p.packet_type == "RREQ" and hasattr(p, 'dest_target'):
+                        self.handle_route_request(p)
+                        continue
+                    elif p.packet_type == "RREP" and hasattr(p, 'dest_target'):
+                        self.handle_route_reply(p)
+                        continue
+                
                 # Rebroadcasting Logic for received message. This is a broadcast or a DM not meant for us.
                 elif not p.destId == self.nodeid and not ackReceived and not realAckReceived and p.hopLimit > 0:
+                    if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
+                        # ZRP routing: use different strategies for broadcast vs DM
+                        if p.destId == NODENUM_BROADCAST:
+                            # Use managed flooding for broadcast messages
+                            if not self.isClientMute:
+                                self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'ZRP: flooding broadcast packet', p.seq)
+                                pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
+                                pNew.hopLimit = p.hopLimit - 1
+                                self.packets.append(pNew)
+                                self.env.process(self.transmit(pNew))
+                        else:
+                            # Use ZRP for DM messages
+                            next_hop = self.zrp_get_next_hop(p.destId)
+                            if next_hop is not None:
+                                self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'ZRP: forwarding DM packet', p.seq, 'to next hop', next_hop)
+                                pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
+                                pNew.hopLimit = p.hopLimit - 1
+                                # Only forward if next hop can receive the packet
+                                next_hop_node = next((n for n in self.nodes if n.nodeid == next_hop), None)
+                                if next_hop_node and pNew.sensedByN[next_hop]:
+                                    self.packets.append(pNew)
+                                    self.env.process(self.transmit(pNew))
+                            else:
+                                # No route known, initiate route discovery if within zone or drop
+                                if p.destId in self.zone_nodes:
+                                    # Should have route within zone - something is wrong
+                                    self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'ZRP: no route to', p.destId, 'within zone, dropping')
+                                else:
+                                    # Start route discovery for nodes outside zone
+                                    self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'ZRP: initiating route discovery for', p.destId)
+                                    self.zrp_route_discovery(p.destId)
                     # FloodingRouter: rebroadcast received packet
-                    if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.MANAGED_FLOOD:
+                    elif self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.MANAGED_FLOOD:
                         if not self.isClientMute:
                             self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'rebroadcasts received packet', p.seq)
                             pNew = MeshPacket(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
@@ -344,3 +501,90 @@ class MeshNode:
                             self.env.process(self.transmit(pNew))
                 else:
                     self.droppedByDelay += 1
+    
+    def zrp_get_next_hop(self, dest_id):
+        """Get next hop for destination using ZRP"""
+        # First check if destination is within zone (proactive routing)
+        if dest_id in self.zone_nodes:
+            next_hop = self.zrp_intrazone_route(dest_id)
+            if next_hop is not None:
+                return next_hop
+        
+        # Check if we have a cached route (from previous route discovery)
+        if dest_id in self.routing_table:
+            route = self.routing_table[dest_id]
+            if self.env.now - route['timestamp'] < self.conf.ZRP_ROUTE_TIMEOUT:
+                return route['nextHop']
+        
+        return None
+    
+    def handle_route_request(self, rreq_packet):
+        """Handle incoming route request"""
+        dest_id = rreq_packet.dest_target
+        orig_id = rreq_packet.origTxNodeId
+        seq = rreq_packet.seq
+        
+        # Check for duplicate RREQ
+        rreq_key = (orig_id, dest_id, seq)
+        if rreq_key in self.route_request_cache:
+            return
+        
+        self.route_request_cache[rreq_key] = self.env.now
+        
+        # If we are the destination, send RREP
+        if dest_id == self.nodeid:
+            self.send_route_reply(orig_id, seq, 0)
+            return
+        
+        # If destination is in our zone, send RREP with route
+        if dest_id in self.zone_nodes:
+            next_hop = self.zrp_intrazone_route(dest_id)
+            if next_hop is not None:
+                hop_count = self.routing_table.get(dest_id, {}).get('hopCount', 1)
+                self.send_route_reply(orig_id, seq, hop_count + rreq_packet.hop_count)
+                return
+        
+        # Forward RREQ to border nodes if we are a border node
+        if self.nodeid in self.get_zone_border_nodes():
+            for border_node in self.get_zone_border_nodes():
+                if border_node != rreq_packet.txNodeId:  # Don't send back to sender
+                    new_rreq = MeshPacket(
+                        self.conf, self.nodes, orig_id, border_node, self.nodeid,
+                        20, seq, rreq_packet.genTime, False, False, None, self.env.now, self.verboseprint
+                    )
+                    new_rreq.packet_type = "RREQ"
+                    new_rreq.dest_target = dest_id
+                    new_rreq.hop_count = rreq_packet.hop_count + 1
+                    self.packets.append(new_rreq)
+                    self.env.process(self.transmit(new_rreq))
+    
+    def send_route_reply(self, orig_id, seq, hop_count):
+        """Send route reply back to originator"""
+        rrep_packet = MeshPacket(
+            self.conf, self.nodes, self.nodeid, orig_id, self.nodeid,
+            15, seq, self.env.now, False, False, None, self.env.now, self.verboseprint
+        )
+        rrep_packet.packet_type = "RREP"
+        rrep_packet.dest_target = orig_id
+        rrep_packet.hop_count = hop_count
+        self.packets.append(rrep_packet)
+        self.env.process(self.transmit(rrep_packet))
+    
+    def handle_route_reply(self, rrep_packet):
+        """Handle incoming route reply"""
+        dest_id = rrep_packet.origTxNodeId  # Original destination
+        next_hop = rrep_packet.txNodeId     # Next hop to reach destination
+        hop_count = rrep_packet.hop_count
+        
+        # Update routing table
+        self.routing_table[dest_id] = {
+            'nextHop': next_hop,
+            'hopCount': hop_count,
+            'timestamp': self.env.now
+        }
+        
+        self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'learned route to', dest_id, 'via', next_hop)
+        
+        # Remove from pending requests
+        if dest_id in self.pending_route_requests:
+            del self.pending_route_requests[dest_id]

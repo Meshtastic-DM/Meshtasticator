@@ -6,6 +6,7 @@ class Config:
 
     class ROUTER_TYPE(Enum):
         MANAGED_FLOOD = 'MANAGED_FLOOD'
+        ZRP = 'ZRP'
 
     def __init__(self):
         self.MODEL = 5  # Path loss model to use (see README)
@@ -37,7 +38,7 @@ class Config:
         self.SIMTIME = 30 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
         self.INTERFERENCE_LEVEL = 0.05  # chance that at a given moment there is already a LoRa packet being sent on your channel, outside of the Meshtastic traffic. Given in a ratio from 0 to 1.
         self.COLLISION_DUE_TO_INTERFERENCE = False
-        self.DMs = False  # Set True for sending DMs (with random destination), False for broadcasts
+        self.DMs = True  # Set True for sending DMs (with random destination), False for broadcasts
         # from RadioInterface.cpp RegionInfo regions[]
         self.regions = {
             "US": {"freq_start": 902e6, "freq_end": 928e6, "power_limit": 30},
@@ -47,7 +48,7 @@ class Config:
         self.REGION = self.regions["US"]  # Select a different region here
         self.CHANNEL_NUM = 27  # Channel number
 
-        self.PLOT = True # whether to plot the time schedule of packets after the simulation
+        self.PLOT = False # whether to plot the time schedule of packets after the simulation
         ### End of discrete-event specific ###
 
         ### PHY parameters (normally no change needed) ###
@@ -100,7 +101,7 @@ class Config:
         #################################################
         ####### MOVING NODE SIMULATION VARIABLES ########
         #################################################
-        self.MOVEMENT_ENABLED = True
+        self.MOVEMENT_ENABLED = False
         # The average number of meters a human walks in a minute
         self.WALKING_METERS_PER_MIN = 96
         # The average number of meters a human bikes in a minute
@@ -119,9 +120,20 @@ class Config:
         # This mirrors the firmware's approach to monitoring channel utilization
         self.CHANNEL_UTILIZATION_PERIODS = 6
 
+        #######################################
+        ####### ZRP SPECIFIC PARAMETERS #######
+        #######################################
+        self.ZRP_ZONE_RADIUS = 2  # Zone radius in hops
+        self.ZRP_NEIGHBOR_TIMEOUT = 5 * self.ONE_MIN_INTERVAL  # Neighbor timeout in ms
+        self.ZRP_ROUTE_TIMEOUT = 10 * self.ONE_MIN_INTERVAL  # Route timeout in ms
+        self.ZRP_HELLO_INTERVAL = self.ONE_MIN_INTERVAL  # Hello packet interval in ms
+
     # Function that needs to be run to ensure the router dependent variables change appropriately
     def update_router_dependencies(self):
         # Example: Overwrite hop limit in the case of X new awesome routing algorithm
         # if self.SELECTED_ROUTER_TYPE == self.ROUTER_TYPE.AWESOME_ROUTER:
         #     Change config values if necessary for your router here
+        if self.SELECTED_ROUTER_TYPE == self.ROUTER_TYPE.ZRP:
+            # ZRP-specific configuration adjustments
+            self.hopLimit = max(self.hopLimit, self.ZRP_ZONE_RADIUS + 2)  # Ensure hop limit allows for zone traversal
         return
