@@ -53,6 +53,13 @@ class MeshNode_AODV(MeshNode):
             # Broadcast packet
             pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
             pNew.hopLimit = p.hopLimit - 1
+            pNew.is_sdn_update = p.is_sdn_update
+            pNew.next_hop = None
+            pNew.data = p.data
+            pNew.is_rerr = p.is_rerr
+            pNew.is_rrep = p.is_rrep
+            pNew.is_rreq = p.is_rreq
+            pNew.hop_count = p.hop_count
             self.packets.append(pNew)
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'broadcasting packet', pNew.seq)
             self.env.process(self.transmit(pNew))
@@ -264,9 +271,6 @@ class MeshNode_AODV(MeshNode):
                 packet.receivedAtN[self.nodeid] = True
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'with delay', round(self.env.now - packet.genTime, 2))
                 self.delays.append(self.env.now - packet.genTime)
-                if packet.is_sdn_update:
-                        self.handle_sdn_update(packet)
-                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'processed SDN update packet', packet.seq, 'from', packet.origTxNodeId)
                 if packet.is_rreq:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RREQ from', packet.origTxNodeId, 'to', packet.destId, 'RREQ_ID', packet.rreq_id)
                         self.handle_rreq(packet)
@@ -276,6 +280,9 @@ class MeshNode_AODV(MeshNode):
                 elif packet.is_rerr:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RERR for', packet.destId)
                         self.handle_rerr(packet)
+                elif packet.is_sdn_update:
+                        self.handle_sdn_update(packet)
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'processed SDN update packet', packet.seq, 'from', packet.origTxNodeId)
                 elif packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
                     if not packet.isAck and packet.wantAck:
                         self.messageSeq["val"] += 1
@@ -370,7 +377,7 @@ class MeshNode_AODV(MeshNode):
                             pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
                             pNew.hopLimit = packet.hopLimit - 1
                             pNew.next_hop = next_hop
-                            pNew.hop_count = packet.hop_count
+                            pNew.hop_count = packet.hop_count +1
                             pNew.ttl = packet.ttl
                             pNew.is_rreq = packet.is_rreq
                             pNew.is_rrep = packet.is_rrep
