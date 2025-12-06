@@ -834,15 +834,39 @@ class InteractiveSim:
     def close_nodes(self):
         print("\nClosing all nodes...")
         pub.unsubAll()
+
+        # tell nodes to exit and close interfaces
         for n in self.nodes:
-            n.iface.localNode.exitSimulator()
-            n.iface.close()
-        if self.docker:
-            self.container.stop()
+            try:
+                n.iface.localNode.exitSimulator()
+            except Exception:
+                pass
+            try:
+                n.iface.close()
+            except Exception:
+                pass
+
+        # stop Docker container, ignore if already auto-removed
+        if self.docker and getattr(self, "container", None) is not None:
+            try:
+                self.container.stop()
+            except docker.errors.NotFound:
+                # container already removed (auto_remove=True)
+                pass
+            except Exception as e:
+                print(f"Warning: could not stop container cleanly: {e}")
+
+        # correctly set the exit flag for reader threads
         if self.forwardToClient:
-            self._wantExit = True
-            self.forwardSocket.close()
-            self.clientSocket.close()
+            self.wantExit = True      # <- was self._wantExit
+            try:
+                self.forwardSocket.close()
+            except Exception:
+                pass
+            try:
+                self.clientSocket.close()
+            except Exception:
+                pass
 
 
 class CommandProcessor(cmd.Cmd):
