@@ -13,27 +13,28 @@ class MeshNode_AODV(MeshNode):
         super().__init__( conf, nodes, env, bc_pipe, nodeid, period, messages, packetsAtN, packets, delays, nodeConfig, messageSeq, verboseprint)
         self.routing_table = {}  # key: destination nodeId, value: next hop nodeId
         self.rreq_id_counter = 0  # Counter for generating unique RREQ IDs
-        self.pending_rreq = {}  # key: (destId, rreq_id), value: list of packets waiting for route
+        self.pending_rreq = {}  # key: (destId), value: list of packets waiting for route
         self.seq_num = 0  # Sequence number for this node
         #self.messages = []  # List to store generated messages
         self.routing_table: dict[int, RouteEntry] = {}
         self.transmitter = simpy.Resource(env, 1)
-        self.conf.SELECTED_ROUTER_TYPE = self.conf.ROUTER_TYPE.AODV
         self.processed_rreq = set()  # Set to track processed RREQs to avoid loops
         self.processed_rrep = set()  # Set to track processed RREPs to avoid loops
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
 
-    def send_packet(self, destId, wantAck=True):
+    def send_packet(self, destId,data = None, wantAck=True,is_sdn_update=False):
         plen = 20
         self.seq_num += 1
         self.messageSeq["val"] += 1
         messageSeq = self.messageSeq["val"]
         self.messages.append(MeshMessage(self.nodeid, destId, self.env.now, messageSeq))
-        p = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, destId, self.nodeid, plen, messageSeq, self.env.now, wantAck, False, None, self.env.now, self.verboseprint)
-        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId)
+        p = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, destId, self.nodeid, plen, messageSeq, self.env.now, wantAck, False, None, self.env.now, self.verboseprint,data=data)
+        p.is_sdn_update = is_sdn_update
+        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId,'is_sdn_update:',is_sdn_update)
         if destId != NODENUM_BROADCAST:
             if destId in self.routing_table and self.routing_table[destId].valid:
-                pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
+                pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
                 pNew.next_hop = self.routing_table[destId].nextHop if destId in self.routing_table else None
                 self.packets.append(pNew)
@@ -45,13 +46,20 @@ class MeshNode_AODV(MeshNode):
                 self.initiate_route_discovery(destId)
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is initiating route discovery for', destId)
                 # Store the packet to be sent once the route is discovered
-                if (destId, self.rreq_id_counter) not in self.pending_rreq:
-                    self.pending_rreq[(destId, self.rreq_id_counter)] = []
-                self.pending_rreq[(destId, self.rreq_id_counter)].append(p)
+                if (destId) not in self.pending_rreq:
+                    self.pending_rreq[(destId)] = []
+                self.pending_rreq[(destId)].append(p)
         else:
             # Broadcast packet
             pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
             pNew.hopLimit = p.hopLimit - 1
+            pNew.is_sdn_update = p.is_sdn_update
+            pNew.next_hop = None
+            pNew.data = p.data
+            pNew.is_rerr = p.is_rerr
+            pNew.is_rrep = p.is_rrep
+            pNew.is_rreq = p.is_rreq
+            pNew.hop_count = p.hop_count
             self.packets.append(pNew)
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'broadcasting packet', pNew.seq)
             self.env.process(self.transmit(pNew))
@@ -70,7 +78,7 @@ class MeshNode_AODV(MeshNode):
         rreq_packet.is_rerr = False
         rreq_packet.hop_count = 0
         rreq_packet.ttl = 64  # Initial TTL value for RREQ
-        rreq_packet.hopLimit =5
+        rreq_packet.hopLimit =7
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'created RREQ for', destId, 'with RREQ_ID', rreq_id)
         self.packets.append(rreq_packet)
         self.env.process(self.transmit(rreq_packet))
@@ -99,15 +107,16 @@ class MeshNode_AODV(MeshNode):
         # Update routing table with reverse route to the source
         if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
            packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
-            self.routing_table[packet.origTxNodeId] = RouteEntry(
-                destId=packet.origTxNodeId,
-                nextHop=packet.txNodeId,
-                hopCount=packet.hop_count + 1,
-                destSeqNum=packet.seq,
-                valid=True,
-                precursorList=[],
-                lifeTime=self.env.now + 300000  
-            )
+            # self.routing_table[packet.origTxNodeId] = RouteEntry(
+            #     destId=packet.origTxNodeId,
+            #     nextHop=packet.txNodeId,
+            #     hopCount=packet.hop_count + 1,
+            #     destSeqNum=packet.seq,
+            #     valid=True,
+            #     precursorList=[],
+            #     lifeTime=self.env.now + 300000  
+            # )
+            self.update_routing_table(packet.origTxNodeId, packet.txNodeId, packet.hop_count + 1, packet.seq)
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated reverse route to', packet.origTxNodeId, 'via', packet.txNodeId)
         # If this node is the destination, send RREP    
         if packet.destId == self.nodeid:
@@ -177,23 +186,25 @@ class MeshNode_AODV(MeshNode):
         # Update routing table with forward route to the destination
         if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
            packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
-            self.routing_table[packet.origTxNodeId] = RouteEntry(
-                destId=packet.origTxNodeId,
-                nextHop=packet.txNodeId,
-                hopCount=packet.hop_count + 1,
-                destSeqNum=packet.seq,
-                valid=True,
-                precursorList=[],
-                lifeTime=self.env.now + 3000000  # Example lifetime
-            )
+            # self.routing_table[packet.origTxNodeId] = RouteEntry(
+            #     destId=packet.origTxNodeId,
+            #     nextHop=packet.txNodeId,
+            #     hopCount=packet.hop_count + 1,
+            #     destSeqNum=packet.seq,
+            #     valid=True,
+            #     precursorList=[],
+            #     lifeTime=self.env.now + 3000000  # Example lifetime
+            # )
+            self.update_routing_table(packet.origTxNodeId, packet.txNodeId, packet.hop_count + 1, packet.seq)
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated forward route to', packet.origTxNodeId, 'via', packet.txNodeId)
         # If this node is the source of the RREQ, send pending packets
         if packet.destId == self.nodeid:
-            key = (packet.origTxNodeId, packet.rreq_id)
+            key = (packet.origTxNodeId)
             if key in self.pending_rreq:
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sending pending packets for', packet.origTxNodeId)
                 for p in self.pending_rreq[key]:
-                    pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint)
+                    pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
+                    pNew.is_sdn_update = p.is_sdn_update
                     pNew.next_hop = self.routing_table.get(p.destId).nextHop if p.destId in self.routing_table else None
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
@@ -209,11 +220,11 @@ class MeshNode_AODV(MeshNode):
             fwd_packet.hop_count = packet.hop_count + 1
             fwd_packet.ttl = packet.ttl - 1
             fwd_packet.hopLimit = packet.hopLimit - 1
-            fwd_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
+            fwd_packet.next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None ###Changed Here
             fwd_packet.txNodeId = self.nodeid
             self.packets.append(fwd_packet)
             self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREP
-            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted RREP for', packet.origTxNodeId)
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted RREP for', packet.origTxNodeId,'next hop',fwd_packet.next_hop)
 
     def handle_rerr(self, packet):
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received RERR for', packet.destId)
@@ -269,6 +280,9 @@ class MeshNode_AODV(MeshNode):
                 elif packet.is_rerr:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is handling RERR for', packet.destId)
                         self.handle_rerr(packet)
+                elif packet.is_sdn_update:
+                        self.handle_sdn_update(packet)
+                        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'processed SDN update packet', packet.seq, 'from', packet.origTxNodeId)
                 elif packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
                     if not packet.isAck and packet.wantAck:
                         self.messageSeq["val"] += 1
@@ -363,11 +377,13 @@ class MeshNode_AODV(MeshNode):
                             pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
                             pNew.hopLimit = packet.hopLimit - 1
                             pNew.next_hop = next_hop
-                            pNew.hop_count = packet.hop_count
+                            pNew.hop_count = packet.hop_count +1
                             pNew.ttl = packet.ttl
                             pNew.is_rreq = packet.is_rreq
                             pNew.is_rrep = packet.is_rrep
                             pNew.is_rerr = packet.is_rerr
+                            pNew.data = packet.data
+                            pNew.is_sdn_update = packet.is_sdn_update
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted packet', pNew.seq, 'to', pNew.destId)
@@ -381,6 +397,8 @@ class MeshNode_AODV(MeshNode):
                             pNew.is_rreq = packet.is_rreq
                             pNew.is_rrep = packet.is_rrep
                             pNew.is_rerr = packet.is_rerr
+                            pNew.data = packet.data
+                            pNew.is_sdn_update = packet.is_sdn_update
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted broadcast packet', pNew.seq)
@@ -408,6 +426,25 @@ class MeshNode_AODV(MeshNode):
                 'lifeTime': entry.lifeTime
             }
         return route_info
+    
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 300000):
+        self.routing_table[destId] = RouteEntry(
+            destId=destId,
+            nextHop=nextHop,
+            hopCount=hopCount,
+            destSeqNum=destSeqNum,
+            valid=valid,
+            precursorList=precursorList,
+            lifeTime=self.env.now + lifeTime  
+        )
+        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated routing table for', destId, 'via', nextHop)
+
+    def handle_sdn_update(self,packet):
+        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'handling SDN update packet', packet.seq)
+        # Process the SDN update contained in the packet
+        # This is a placeholder for actual SDN update logic
+        # For example, updating flow tables or routing policies based on the packet content
+        pass
 
 class RouteEntry:
     def __init__(self, destId, nextHop, hopCount, destSeqNum, valid, precursorList, lifeTime):

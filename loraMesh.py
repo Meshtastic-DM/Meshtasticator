@@ -97,6 +97,12 @@ if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV:
 		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 		nodes.append(node)
 		graph.add_node(node)
+elif conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.SDN_AODV:
+	from lib.node_sdn import MeshNode_SDN
+	for i in range(conf.NR_NODES):
+		node = MeshNode_SDN(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
 else:
 	for i in range(conf.NR_NODES):
 		node = MeshNode(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)

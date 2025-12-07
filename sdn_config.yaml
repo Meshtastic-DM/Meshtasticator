@@ -1,0 +1,434 @@
+0:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -439.71379310344855
+  y: -220.61764705882342
+  z: 1.0
+  simRole: "Control_Center"
+1:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1500.199999999999
+  y: 735.3921568627447
+  z: 1.0
+  simRole: "sdn_node"
+2:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -931.1586206896554
+  y: -1250.166666666666
+  z: 1.0
+  simRole: "sdn_node"
+3:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 1008.7551724137938
+  y: 183.8480392156871
+  z: 1.0
+  simRole: "sdn_node"
+4:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1422.6034482758623
+  y: -2500.333333333334
+  z: 1.0
+5:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 336.2517241379319
+  y: -2426.7941176470595
+  z: 1.0
+6:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -413.8482758620685
+  y: -4118.196078431373
+  z: 1.0
+7:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -413.8482758620685
+  y: -5294.823529411766
+  z: 1.0
+8:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1914.0482758620683
+  y: -5000.666666666668
+  z: 1.0
+9:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -2095.1068965517243
+  y: 2132.6372549019616
+  z: 1.0
+10:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 1345.006896551724
+  y: 1985.5588235294126
+  z: 1.0
+11:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2172.7034482758627
+  y: 1434.0147058823532
+  z: 1.0
+12:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -3129.7275862068964
+  y: -73.53921568627447
+  z: 1.0
+13:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -3233.189655172414
+  y: -1581.093137254902
+  z: 1.0
+14:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2405.493103448276
+  y: -588.3137254901958
+  z: 1.0
+15:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2146.8379310344826
+  y: -2390.0245098039213
+  z: 1.0
+16:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2069.241379310346
+  y: -3860.8088235294126
+  z: 1.0
+17:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -387.9827586206884
+  y: 3971.1176470588252
+  z: 1.0
+18:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1681.258620689654
+  y: 3824.0392156862763
+  z: 1.0
+19:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -2922.803448275862
+  y: 4081.426470588236
+  z: 1.0
+20:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 1241.5448275862072
+  y: 4669.740196078432
+  z: 1.0
+21:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2612.4172413793112
+  y: 4816.818627450981
+  z: 1.0
+22:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 2560.686206896553
+  y: 3235.7254901960787
+  z: 1.0
+23:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -4759.255172413793
+  y: 2316.4852941176487
+  z: 1.0
+24:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -3414.248275862069
+  y: 2059.098039215687
+  z: 1.0
+25:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -4138.482758620689
+  y: 772.1617647058829
+  z: 1.0
+26:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -4914.448275862069
+  y: -2279.7156862745105
+  z: 1.0
+27:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -4216.079310344828
+  y: -2794.490196078432
+  z: 1.0
+28:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -4267.810344827586
+  y: -36.76960784313633
+  z: 1.0
+29:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -3181.4586206896547
+  y: -4302.04411764706
+  z: 1.0
+30:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -3181.4586206896547
+  y: -3125.416666666668
+  z: 1.0
+31:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 387.9827586206902
+  y: 2132.6372549019616
+  z: 1.0
+32:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -724.2344827586203
+  y: 2647.411764705883
+  z: 1.0
+33:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 3828.0965517241384
+  y: -441.23529411764684
+  z: 1.0
+34:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 3750.5
+  y: -1617.8627450980403
+  z: 1.0
+35:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 5224.834482758621
+  y: -956.0098039215682
+  z: 1.0
+36:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 3802.23103448276
+  y: -2978.338235294119
+  z: 1.0
+37:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 4604.062068965517
+  y: 2242.946078431374
+  z: 1.0
+38:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 3491.8448275862083
+  y: 1581.093137254902
+  z: 1.0
+39:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 5276.565517241381
+  y: 4780.0490196078445
+  z: 1.0
+40:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: 4345.406896551725
+  y: 4522.661764705883
+  z: 1.0
+41:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1914.0482758620683
+  y: 6250.833333333334
+  z: 1.0
+42:
+  antennaGain: 0.0
+  hopLimit: 3
+  isClientMute: false
+  isRepeater: false
+  isRouter: false
+  neighborInfo: false
+  x: -1784.7206896551725
+  y: 5147.745098039219
+  z: 1.0

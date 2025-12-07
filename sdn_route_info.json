@@ -1,0 +1,182 @@
+[
+  {
+    "selfId": 1,
+    "destId": 2,
+    "nextHop": 2,
+    "hopCount": 1,
+    "destSeqNum": 5,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 1,
+    "destId": 0,
+    "nextHop": 0,
+    "hopCount": 1,
+    "destSeqNum": 3,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 1,
+    "nextHop": 1,
+    "hopCount": 1,
+    "destSeqNum": 2,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 0,
+    "nextHop": 0,
+    "hopCount": 1,
+    "destSeqNum": 6,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 3,
+    "nextHop": 3,
+    "hopCount": 1,
+    "destSeqNum": 27,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 5,
+    "destId": 3,
+    "nextHop": 3,
+    "hopCount": 1,
+    "destSeqNum": 10,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 3,
+    "destId": 2,
+    "nextHop": 2,
+    "hopCount": 1,
+    "destSeqNum": 5,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 5,
+    "destId": 4,
+    "nextHop": 4,
+    "hopCount": 1,
+    "destSeqNum": 23,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 3,
+    "destId": 4,
+    "nextHop": 4,
+    "hopCount": 1,
+    "destSeqNum": 23,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 1,
+    "destId": 2,
+    "nextHop": 2,
+    "hopCount": 1,
+    "destSeqNum": 5,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 1,
+    "destId": 0,
+    "nextHop": 0,
+    "hopCount": 1,
+    "destSeqNum": 3,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 1,
+    "nextHop": 1,
+    "hopCount": 1,
+    "destSeqNum": 2,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 0,
+    "nextHop": 0,
+    "hopCount": 1,
+    "destSeqNum": 6,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 2,
+    "destId": 3,
+    "nextHop": 3,
+    "hopCount": 1,
+    "destSeqNum": 27,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 5,
+    "destId": 3,
+    "nextHop": 3,
+    "hopCount": 1,
+    "destSeqNum": 10,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 3,
+    "destId": 2,
+    "nextHop": 2,
+    "hopCount": 1,
+    "destSeqNum": 5,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 5,
+    "destId": 4,
+    "nextHop": 4,
+    "hopCount": 1,
+    "destSeqNum": 23,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  },
+  {
+    "selfId": 3,
+    "destId": 4,
+    "nextHop": 4,
+    "hopCount": 1,
+    "destSeqNum": 23,
+    "valid": true,
+    "precursorList": [],
+    "lifeTime": 300000
+  }
+]

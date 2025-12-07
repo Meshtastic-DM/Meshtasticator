@@ -49,3 +49,6 @@ nodeLanguageServer.*/**
 dist/**
 program
 venv
+dm_packets_R.csv
+broadcast_packets_R.csv
+output.txt
