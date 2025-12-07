@@ -319,6 +319,8 @@ realibilityMatrix = np.array([val if val is not None else np.nan for val in real
 
 print("Reliability of sensor packets from each node to node 0:", realibilityMatrix)
 
+
+
 x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
 
 plt.figure(figsize=(8, 6))
@@ -350,6 +352,7 @@ for source in range(N):
 
 DMmatrix = np.array([[val if val is not None else np.nan for val in row] for row in realiabilityDm], dtype=float)
 np.fill_diagonal(DMmatrix, np.nan)
+
 # Plot with annotations
 plt.figure(figsize=(8, 6))
 plt.imshow(DMmatrix, cmap='YlGnBu', interpolation='nearest')
@@ -379,6 +382,7 @@ for dest in range(N):
 		realibilityBroadcast[dest] = None
 
 realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+
 
 plt.figure(figsize=(8, 6))
 bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
@@ -570,11 +574,89 @@ def save_nested_dict_to_csv(data, filename):
                 for v in values:
                     writer.writerow([outer, inner, v])
 
+def save_reliability_matrix_to_csv(matrix, filename, node_ids=None):
+    """
+    Save a 2D reliability matrix (NxN numpy array) to CSV.
+    Rows = source nodes, Columns = destination nodes
+    
+    Args:
+        matrix: NxN numpy array with reliability values (0-1 or nan)
+        filename: output CSV filename
+        node_ids: optional list of node IDs (defaults to 0..N-1)
+    """
+    N = matrix.shape[0]
+    if node_ids is None:
+        node_ids = list(range(N))
+    
+    with open(filename, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        # Header row: empty cell, then destination node IDs
+        writer.writerow(["source\\dest"] + [f"dest_{nid}" for nid in node_ids])
+        
+        # Data rows: source node ID, then reliability values for each destination
+        for i, src_id in enumerate(node_ids):
+            row = [f"src_{src_id}"]
+            for j in range(N):
+                val = matrix[i][j]
+                if np.isnan(val):
+                    row.append("")  # Empty cell for nan
+                else:
+                    row.append(f"{val:.4f}")  # 4 decimal places
+            writer.writerow(row)
+
+def save_reliability_vector_to_csv(vector, filename, node_ids=None, column_name="reliability"):
+    """
+    Save a 1D reliability vector to CSV.
+    
+    Args:
+        vector: 1D numpy array with reliability values (0-1 or nan)
+        filename: output CSV filename
+        node_ids: optional list of node IDs (defaults to 0..N-1)
+        column_name: name for the reliability column
+    """
+    N = len(vector)
+    if node_ids is None:
+        node_ids = list(range(N))
+    
+    with open(filename, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["node_id", column_name])
+        
+        for i, nid in enumerate(node_ids):
+            val = vector[i]
+            if np.isnan(val):
+                writer.writerow([nid, ""])
+            else:
+                writer.writerow([nid, f"{val:.4f}"])
+
 
 print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
 print("DM packets delay arrays:", dmPacketsDelayArrays)
 print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
 
-save_nested_dict_to_csv(sensorPacketsDelayArrays, "sensor_packets_R.csv")
-save_nested_dict_to_csv(dmPacketsDelayArrays, "dm_packets_R.csv")
-save_nested_dict_to_csv(brocastPacketsDelayArrays, "broadcast_packets_R.csv")
+save_nested_dict_to_csv(sensorPacketsDelayArrays, f"output/sensor_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+save_nested_dict_to_csv(dmPacketsDelayArrays, f"output/dm_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+save_nested_dict_to_csv(brocastPacketsDelayArrays, f"output/broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+
+# Save sensor reliability to CSV
+save_reliability_vector_to_csv(
+    realibilityMatrix, 
+    f"output/sensor_reliability_to_dest0_{conf.SELECTED_ROUTER_TYPE}.csv",
+    node_ids=list(range(N)),
+    column_name="reliability_to_dest_0"
+)
+
+# Save DM reliability matrix to CSV
+save_reliability_matrix_to_csv(
+    DMmatrix,
+    f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.csv",
+    node_ids=list(range(N))
+)
+
+# Save broadcast reliability to CSV
+save_reliability_vector_to_csv(
+    realibilityBroadcast,
+    f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.csv",
+    node_ids=list(range(N)),
+    column_name="reliability_from_src_0"
+)

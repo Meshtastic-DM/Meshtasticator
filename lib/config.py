@@ -85,7 +85,7 @@ class Config:
         ############################
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
-        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.SDN_AODV
+        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.MANAGED_FLOOD
 
         #####################################################
         ####### ASYMMETRIC LINK SIMULATION VARIABLES ########
