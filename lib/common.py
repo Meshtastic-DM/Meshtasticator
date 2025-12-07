@@ -114,7 +114,7 @@ def gen_scenario(conf):
 	button.on_clicked(submit)
 
 	def onclick(event):
-		if event.dblclick:
+		if event.dblclick and event.xdata is not None and event.ydata is not None:
 			if len(nodeX) > 0:
 				# Save config of previous node
 				nodeZ.append(float(height_textbox.text))
