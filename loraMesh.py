@@ -15,6 +15,7 @@ from lib.config import Config
 from lib.discrete_event import BroadcastPipe
 from lib.node import MeshNode
 from lib.node_aodv import MeshNode_AODV
+from lib.node_zrp import MeshNode_ZRP
 
 VERBOSE = True
 conf = Config()
@@ -101,6 +102,11 @@ elif conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.SDN_AODV:
 	from lib.node_sdn import MeshNode_SDN
 	for i in range(conf.NR_NODES):
 		node = MeshNode_SDN(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
+elif conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.ZRP:
+	for i in range(conf.NR_NODES):
+		node = MeshNode_ZRP(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 		nodes.append(node)
 		graph.add_node(node)
 else:
