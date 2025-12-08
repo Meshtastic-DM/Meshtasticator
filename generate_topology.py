@@ -166,7 +166,7 @@ def save_config(nodes, output_path):
     with open(output_path, 'w') as f:
         yaml.dump(nodes, f, default_flow_style=False, sort_keys=False)
     
-    print(f"✓ Configuration saved to: {output_path}")
+    print(f"[OK] Configuration saved to: {output_path}")
 
 
 def print_statistics(nodes):
@@ -311,6 +311,11 @@ Examples:
         print(f"Loading parameters from: {args.input_params}")
         params = load_params_from_yaml(args.input_params)
         
+        # Save the command-line output argument (it should take precedence)
+        cli_output = args.output if args.output != 'out/config.yaml' else None
+        cli_seed = args.seed
+        cli_quiet = args.quiet
+        
         # Override args with YAML values
         args.dm = params.get('dm', args.dm)
         args.sensor = params.get('sensor', args.sensor)
@@ -323,9 +328,19 @@ Examples:
         args.router_z = params.get('router_z', args.router_z)
         args.min_distance = params.get('min_distance', args.min_distance)
         args.max_distance = params.get('max_distance', args.max_distance)
-        args.seed = params.get('seed', args.seed)
-        args.output = params.get('output', args.output)
-        args.quiet = params.get('quiet', args.quiet)
+        
+        # Only override these if they weren't explicitly set on command line
+        if cli_seed is not None:
+            args.seed = cli_seed
+        else:
+            args.seed = params.get('seed', args.seed)
+        
+        if cli_output is not None:
+            args.output = cli_output
+        else:
+            args.output = params.get('output', args.output)
+        
+        args.quiet = params.get('quiet', cli_quiet)
     
     # Validate inputs
     if args.dm < 0 or args.sensor < 0 or args.router < 0:
@@ -364,7 +379,7 @@ Examples:
     if not args.quiet:
         print_statistics(nodes)
     
-    print(f"✓ Ready to simulate! Use this config with:")
+    print(f"[OK] Ready to simulate! Use this config with:")
     print(f"  python loraMesh.py --config {args.output}")
 
 
