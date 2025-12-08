@@ -29,7 +29,7 @@ class MeshPacket_ZRP(MeshPacket):
         verboseprint,
 
         # ZRP packet type
-        packet_type,          # "IARP" or "IERP"
+        packet_type=None,          # "IARP" or "IERP"
 
         # IARP fields
         iarp_seq_num=None,
