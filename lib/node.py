@@ -265,6 +265,35 @@ class MeshNode:
                             self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
+                        elif self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
+                            ############ ZRP version ############
+                            from lib.packet_zrp import MeshPacket_ZRP
+                            pNew = MeshPacket_ZRP(
+                                self.conf,
+                                self.nodes,
+                                self.nodeid,      # origTxNodeId
+                                p.destId,         # destId
+                                self.nodeid,      # txNodeId
+                                p.packetLen,
+                                p.seq,
+                                p.genTime,
+                                p.wantAck,
+                                False,            # isAck
+                                None,             # requestId
+                                self.env.now,
+                                self.verboseprint,
+                                None,             # packet_type = None → DATA packet (not IARP/IERP)
+                            )
+                            pNew.retransmissions = minRetransmissions - 1
+                            self.verboseprint(
+                                round(self.env.now, 3),
+                                'Node', self.nodeid,
+                                'wants to retransmit its generated packet to', destId,
+                                'with seq.nr.', p.seq,
+                                'minRetransmissions', minRetransmissions
+                            )
+                            self.packets.append(pNew)
+                            self.env.process(self.transmit(pNew))
                         else:
                             pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
                             pNew.retransmissions = minRetransmissions - 1
