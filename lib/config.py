@@ -8,6 +8,7 @@ class Config:
         MANAGED_FLOOD = 'MANAGED_FLOOD'
         AODV = 'AODV'
         SDN_AODV = 'SDN_AODV'
+        ZRP = 'ZRP'
 
     def __init__(self):
         self.MODEL = 5  # Path loss model to use (see README)
@@ -86,6 +87,15 @@ class Config:
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
         self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.MANAGED_FLOOD
+
+        ############################
+        #### ZRP CONFIGURATION #####
+        ############################
+        # Zone Routing Protocol specific parameters
+        self.ZRP_ZONE_RADIUS = 2  # Zone radius in hops (default: 2)
+        self.ZRP_IARP_UPDATE_INTERVAL = 10 * self.ONE_SECOND_INTERVAL  # IARP update interval in ms (default: 10 seconds)
+        self.ZRP_IERP_MAX_TTL = 7  # Maximum TTL for IERP queries (default: 10 hops)
+        self.ZRP_ROUTE_CACHE_TIMEOUT = 3600 * self.ONE_SECOND_INTERVAL  # Route cache timeout in ms (default: 3600 seconds = 1 hour, ensures routes persist for full simulation)
 
         #####################################################
         ####### ASYMMETRIC LINK SIMULATION VARIABLES ########
