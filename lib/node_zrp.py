@@ -23,10 +23,10 @@ class MeshNode_ZRP(MeshNode):
     For now:
       - Implements ONLY IARP (intrazone proactive routing).
       - Starts a periodic IARP update process.
-      - Provides a handler to process incoming IARP packets.
+      - Uses managed flooding for IARP within ZRP_ZONE_RADIUS hops.
+      - Data / ACK handling is similar to AODV path, but using MeshPacket_ZRP.
 
-    IERP / BRP and full interzone routing are left as empty stubs,
-    to be implemented step by step.
+    IERP / BRP and full interzone routing are left as empty stubs.
     """
 
     def __init__(
@@ -72,8 +72,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_table: dict[int, IARPEntry] = {}
         self.iarp_seq_num = 0
 
-        # IARP periodic update interval (ms) – you can tune this
-        # Default: 5 minutes if not specified in config
+        # IARP periodic update interval (ms)
         self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 5 * 60 * 1000)
 
         # Start periodic IARP process
@@ -87,10 +86,8 @@ class MeshNode_ZRP(MeshNode):
         """
         Periodically broadcast IARP updates within the zone.
 
-        For now, we keep it very simple:
-          - Every iarp_period_msec, this node sends an IARP packet
-            advertising itself with distance 0.
-          - You can later extend this to piggy-back full/partial tables.
+        Every iarp_period_msec, this node sends an IARP packet
+        advertising itself with distance 0 and hopLimit = ZRP_ZONE_RADIUS.
         """
         while True:
             nextGen = self.get_next_time(self.iarp_period_msec)
@@ -101,7 +98,7 @@ class MeshNode_ZRP(MeshNode):
             # Increment local IARP sequence number
             self.iarp_seq_num += 1
 
-            # Make a logical message record (optional; keeps your logs consistent)
+            # Logical message record
             self.messageSeq["val"] += 1
             messageSeq = self.messageSeq["val"]
             self.messages.append(
@@ -125,24 +122,31 @@ class MeshNode_ZRP(MeshNode):
                 verboseprint=self.verboseprint,
                 packet_type="IARP",
                 iarp_seq_num=self.iarp_seq_num,
-                hop_count=0,
+                hop_count=0,                 # origin: 0 hops from itself
             )
+            # managed flooding TTL inside zone
+            p.hopLimit = self.zone_radius
 
             self.verboseprint(
                 "At time", round(self.env.now, 3),
                 "node", self.nodeid,
                 "broadcasting IARP update with seq", self.iarp_seq_num,
+                "hopLimit", p.hopLimit,
             )
 
             self.packets.append(p)
             self.env.process(self.transmit(p))
-
 
     def handle_iarp(self, packet: MeshPacket_ZRP):
         if not isinstance(packet, MeshPacket_ZRP) or packet.packet_type != "IARP":
             return
 
         src = packet.origTxNodeId
+
+        # 🔒 Do not install routes to yourself
+        if src == self.nodeid:
+            return
+
         # at the receiver, distance is at least 1 hop from source
         distance = getattr(packet, "hop_count", 0) + 1
         seq_num = packet.iarp_seq_num
@@ -173,10 +177,6 @@ class MeshNode_ZRP(MeshNode):
 
 
     def get_iarp_table(self):
-        """
-        Helper to inspect IARP table (for debug / logging).
-        Returns a serializable dict similar to AODV's get_route_table.
-        """
         info = {}
         for destId, entry in self.iarp_table.items():
             info[destId] = {
@@ -192,43 +192,24 @@ class MeshNode_ZRP(MeshNode):
     # =====================================================================
 
     def initiate_route_discovery(self, destId):
-        """
-        Placeholder for IERP RREQ logic.
-        Implement later.
-        """
         pass
 
     def handle_ierp_rreq(self, packet):
-        """
-        Placeholder for handling IERP RREQ packets.
-        Implement later.
-        """
         pass
 
     def handle_ierp_rrep(self, packet):
-        """
-        Placeholder for handling IERP RREP packets.
-        Implement later.
-        """
         pass
 
     def handle_zrp_control(self, packet):
-        """
-        Generic ZRP control dispatcher.
-        You can call this from your receive() override later.
-
-        For now:
-          - If IARP packet → handle_iarp()
-          - IERP packets → left empty
-        """
         if isinstance(packet, MeshPacket_ZRP):
             if packet.packet_type == "IARP":
                 self.handle_iarp(packet)
             elif packet.packet_type == "IERP":
-                # Later: dispatch to handle_ierp_rreq / handle_ierp_rrep
                 pass
-    
 
+    # =====================================================================
+    # RECEIVE WITH MANAGED FLOODING FOR IARP
+    # =====================================================================
 
     def receive(self, pipe):
         while True:
@@ -242,26 +223,18 @@ class MeshNode_ZRP(MeshNode):
             ):
                 if not self.isTransmitting:
                     self.verboseprint(
-                        "At time",
-                        round(self.env.now, 3),
-                        "node",
-                        self.nodeid,
-                        "started receiving packet",
-                        packet.seq,
-                        "from",
-                        packet.txNodeId,
+                        "At time", round(self.env.now, 3),
+                        "node", self.nodeid,
+                        "started receiving packet", packet.seq,
+                        "from", packet.txNodeId,
                     )
                     packet.onAirToN[self.nodeid] = False
                     self.isReceiving.append(True)
                 else:
-                    # was transmitting → cannot receive
                     self.verboseprint(
-                        "At time",
-                        round(self.env.now, 3),
-                        "node",
-                        self.nodeid,
-                        "was transmitting, so could not receive packet",
-                        packet.seq,
+                        "At time", round(self.env.now, 3),
+                        "node", self.nodeid,
+                        "was transmitting, so could not receive packet", packet.seq,
                     )
                     packet.sensedByN[self.nodeid] = False
                     packet.onAirToN[self.nodeid] = False
@@ -277,48 +250,87 @@ class MeshNode_ZRP(MeshNode):
 
                 if packet.collidedAtN[self.nodeid]:
                     self.verboseprint(
-                        "At time",
-                        round(self.env.now, 3),
-                        "node",
-                        self.nodeid,
+                        "At time", round(self.env.now, 3),
+                        "node", self.nodeid,
                         "could not decode packet.",
-                    )
-                    continue
-
-                # Drop if hop_count >= 7
-                if hasattr(packet, "hop_count") and packet.hop_count >= 7:
-                    self.verboseprint(
-                        "At time",
-                        round(self.env.now, 3),
-                        "node",
-                        self.nodeid,
-                        "dropped packet",
-                        packet.seq,
-                        "due to hop_count >= 7",
                     )
                     continue
 
                 packet.receivedAtN[self.nodeid] = True
                 self.verboseprint(
-                    "At time",
-                    round(self.env.now, 3),
-                    "node",
-                    self.nodeid,
-                    "received packet",
-                    packet.seq,
-                    "with delay",
-                    round(self.env.now - packet.genTime, 2),
+                    "At time", round(self.env.now, 3),
+                    "node", self.nodeid,
+                    "received packet", packet.seq,
+                    "with delay", round(self.env.now - packet.genTime, 2),
                 )
                 self.delays.append(self.env.now - packet.genTime)
 
-                # ----------------- ZRP control handling (IARP only for now) -----------------
+                # ==================================================
+                # IARP packets: managed flooding with zone radius
+                # ==================================================
                 if isinstance(packet, MeshPacket_ZRP) and packet.packet_type == "IARP":
-                    # Only IARP implemented now
+                    current_hops = getattr(packet, "hop_count", 0)
+
+                    # Stop if already at or beyond zone radius
+                    if current_hops >= self.zone_radius:
+                        self.verboseprint(
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "dropped IARP packet", packet.seq,
+                            "from", packet.origTxNodeId,
+                            "because hop_count", current_hops,
+                            ">= ZRP_ZONE_RADIUS", self.zone_radius,
+                        )
+                        continue
+
+                    # Update local IARP table
                     self.handle_iarp(packet)
-                    # No ACK, no further data processing for IARP
+
+                    # Managed flood inside zone
+                    remaining = getattr(packet, "hopLimit", self.zone_radius)
+                    if (
+                        packet.destId == NODENUM_BROADCAST
+                        and not self.isClientMute
+                        and remaining > 0
+                        and current_hops + 1 < self.zone_radius
+                    ):
+                        pNew = MeshPacket_ZRP(
+                            self.conf,
+                            self.nodes,
+                            origTxNodeId=packet.origTxNodeId, # keep original source
+                            destId=NODENUM_BROADCAST,
+                            txNodeId=self.nodeid,
+                            packetLen=packet.packetLen,
+                            seq=packet.seq,
+                            genTime=packet.genTime,
+                            wantAck=False,
+                            isAck=False,
+                            requestId=None,
+                            txTime=self.env.now,
+                            verboseprint=self.verboseprint,
+                            packet_type="IARP",
+                            iarp_seq_num=packet.iarp_seq_num,
+                            hop_count=current_hops + 1,
+                        )
+                        pNew.hopLimit = remaining - 1
+
+                        self.packets.append(pNew)
+                        self.env.process(self.transmit(pNew))
+                        self.verboseprint(
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "rebroadcasted IARP packet", pNew.seq,
+                            "origin", packet.origTxNodeId,
+                            "hop_count", pNew.hop_count,
+                            "hopLimit", pNew.hopLimit,
+                        )
+
+                    # IARP is control-only, no data / ACK handling
                     continue
 
-                # ----------------- Data / ACK handling -----------------
+                # ==================================================
+                # Data / ACK handling (non-IARP)
+                # ==================================================
                 if packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
                     # Generate ACK if required
                     if not packet.isAck and packet.wantAck:
@@ -326,7 +338,10 @@ class MeshNode_ZRP(MeshNode):
                         messageSeq = self.messageSeq["val"]
                         self.messages.append(
                             MeshMessage(
-                                self.nodeid, packet.origTxNodeId, self.env.now, messageSeq
+                                self.nodeid,
+                                packet.origTxNodeId,
+                                self.env.now,
+                                messageSeq,
                             )
                         )
                         # ACK as ZRP-DATA packet (packet_type=None)
@@ -353,25 +368,17 @@ class MeshNode_ZRP(MeshNode):
                         self.packets.append(ack_packet)
                         self.env.process(self.transmit(ack_packet))
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
-                            "sent ACK for packet",
-                            packet.seq,
-                            "to",
-                            packet.origTxNodeId,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "sent ACK for packet", packet.seq,
+                            "to", packet.origTxNodeId,
                         )
 
                     self.verboseprint(
-                        "At time",
-                        round(self.env.now, 3),
-                        "node",
-                        self.nodeid,
-                        "received packet",
-                        packet.seq,
-                        "from",
-                        packet.origTxNodeId,
+                        "At time", round(self.env.now, 3),
+                        "node", self.nodeid,
+                        "received packet", packet.seq,
+                        "from", packet.origTxNodeId,
                     )
 
                     if not packet.isAck:
@@ -382,13 +389,11 @@ class MeshNode_ZRP(MeshNode):
                                 orginTxNode = n
                                 break
 
-                        # ----------------- Sensor → Control center stats -----------------
+                        # Sensor → Control stats
                         if orginTxNode and orginTxNode.simRole == "Sensor":
                             self.verboseprint(
-                                "At time",
-                                round(self.env.now, 3),
-                                "node",
-                                self.nodeid,
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
                                 "is a Control node receiving a packet from Sensor node",
                                 orginTxNodeId,
                             )
@@ -411,17 +416,14 @@ class MeshNode_ZRP(MeshNode):
                                 packet.seq
                             ] += 1
 
-                        # ----------------- Control_Center broadcast handling -----------------
+                        # Control_Center broadcast handling
                         elif orginTxNode and orginTxNode.simRole == "Control_Center":
                             if packet.seq not in self.BroadcastPacketsReceived:
                                 self.BroadcastPacketsReceived[packet.seq] = 0
-                                # First time seeing this broadcast → rebroadcast (subject to hop_count)
                                 if not self.isClientMute:
                                     self.verboseprint(
-                                        "At time",
-                                        round(self.env.now, 3),
-                                        "node",
-                                        self.nodeid,
+                                        "At time", round(self.env.now, 3),
+                                        "node", self.nodeid,
                                         "rebroadcasts received broadcast packet",
                                         packet.seq,
                                     )
@@ -448,17 +450,11 @@ class MeshNode_ZRP(MeshNode):
                                     self.packets.append(pNew)
                                     self.env.process(self.transmit(pNew))
                                     self.verboseprint(
-                                        "At time",
-                                        round(self.env.now, 3),
-                                        "node",
-                                        self.nodeid,
-                                        "rebroadcasted broadcast packet",
-                                        pNew.seq,
+                                        "At time", round(self.env.now, 3),
+                                        "node", self.nodeid,
+                                        "rebroadcasted broadcast packet", pNew.seq,
                                     )
-                                    if (
-                                        packet.origTxNodeId
-                                        not in self.BroadcastPacketsDelays
-                                    ):
+                                    if packet.origTxNodeId not in self.BroadcastPacketsDelays:
                                         self.BroadcastPacketsDelays[
                                             packet.origTxNodeId
                                         ] = []
@@ -467,7 +463,7 @@ class MeshNode_ZRP(MeshNode):
                                     ].append(self.env.now - packet.genTime)
                             self.BroadcastPacketsReceived[packet.seq] += 1
 
-                        # ----------------- DM unicast stats -----------------
+                        # DM unicast stats
                         elif orginTxNode and orginTxNode.simRole == "DM":
                             if packet.seq not in self.DMPacketsReceived:
                                 self.DMPacketsReceived[packet.seq] = 0
@@ -512,15 +508,12 @@ class MeshNode_ZRP(MeshNode):
                             self.DMPacketsAcked[packet.seq] += 1
 
                 else:
-                    # Not for me and not pure broadcast delivery case → optional forwarding
+                    # Not for me and not pure broadcast → optional forwarding (data)
                     if not self.isClientMute:
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
-                            "rebroadcasts received packet",
-                            packet.seq,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "rebroadcasts received packet", packet.seq,
                         )
                         pNew = MeshPacket_ZRP(
                             self.conf,
@@ -545,52 +538,38 @@ class MeshNode_ZRP(MeshNode):
                         self.packets.append(pNew)
                         self.env.process(self.transmit(pNew))
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
-                            "rebroadcasted packet",
-                            pNew.seq,
-                            "to",
-                            pNew.destId,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "rebroadcasted packet", pNew.seq,
+                            "to", pNew.destId,
                         )
                     else:
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
-                            "dropped packet",
-                            packet.seq,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "dropped packet", packet.seq,
                             "because client is muted",
                         )
 
                 # ----------------- ACK bookkeeping for queue -----------------
                 for sentPacket in self.packets:
-                    # implicit ACK (same seq still in queue)
                     if sentPacket.txNodeId == self.nodeid and sentPacket.seq == packet.seq:
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
                             "received implicit ACK for message in queue.",
                         )
                         ackReceived = True
                         sentPacket.ackReceived = True
-                    # real ACK
                     if (
                         sentPacket.origTxNodeId == self.nodeid
                         and packet.isAck
                         and sentPacket.seq == packet.requestId
                     ):
                         self.verboseprint(
-                            "At time",
-                            round(self.env.now, 3),
-                            "node",
-                            self.nodeid,
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
                             "received real ACK.",
                         )
                         realAckReceived = True
                         sentPacket.ackReceived = True
-
