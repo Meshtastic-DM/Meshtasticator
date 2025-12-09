@@ -37,6 +37,7 @@ class MeshPacket_ZRP(MeshPacket):
         # IERP fields
         ierp_type=None,       # "RREQ" or "RREP"
         ierp_id=None,
+        ierp_destId=None,
 
         # Common ZRP fields
         hop_count=0,          # <— INCLUDED
@@ -75,6 +76,7 @@ class MeshPacket_ZRP(MeshPacket):
         # -----------------------------
         self.ierp_type = ierp_type              # "RREQ" or "RREP"
         self.ierp_id = ierp_id
+        self.ierp_destId = ierp_destId
 
         # Route accumulation (for RREP)
         self.route_path = []
