@@ -73,7 +73,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 5 * 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1 * 60 * 1000)
 
         # Start periodic IARP process
         self.env.process(self._iarp_periodic_process())
