@@ -32,7 +32,7 @@ class MeshNode_AODV(MeshNode):
         p.is_sdn_update = is_sdn_update
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId,'is_sdn_update:',is_sdn_update)
         if destId != NODENUM_BROADCAST:
-            if destId in self.routing_table and self.routing_table[destId].valid:
+            if destId in self.routing_table and self.routing_table[destId].valid and self.env.now < self.routing_table[destId].lifeTime:
                 pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
                 pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
@@ -427,7 +427,7 @@ class MeshNode_AODV(MeshNode):
             }
         return route_info
     
-    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 300000):
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 30000000):
         self.routing_table[destId] = RouteEntry(
             destId=destId,
             nextHop=nextHop,
