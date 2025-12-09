@@ -20,13 +20,14 @@ class MeshNode_ZRP(MeshNode):
     """
     ZRP-enabled node.
 
-    For now:
+    Currently:
       - Implements ONLY IARP (intrazone proactive routing).
       - Starts a periodic IARP update process.
       - Uses managed flooding for IARP within ZRP_ZONE_RADIUS hops.
-      - Data / ACK handling is similar to AODV path, but using MeshPacket_ZRP.
-
-    IERP / BRP and full interzone routing are left as empty stubs.
+      - Data / ACK handling uses MeshPacket_ZRP.
+      - Unicast send:
+          * If dest is in IARP table and within zone_radius → send via nextHop.
+          * Else → placeholder for IERP (currently: best-effort flooding).
     """
 
     def __init__(
@@ -75,8 +76,134 @@ class MeshNode_ZRP(MeshNode):
         # IARP periodic update interval (ms)
         self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1 * 60 * 1000)
 
+        # Placeholder for future IERP/BRP usage
+        self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
+
         # Start periodic IARP process
         self.env.process(self._iarp_periodic_process())
+
+    # =====================================================================
+    # ZRP send_packet: DATA (unicast + broadcast)
+    # =====================================================================
+
+    def send_packet(self, destId, data=None, wantAck=True, is_sdn_update=False):
+        """
+        ZRP-aware send_packet:
+
+        - Always builds MeshPacket_ZRP.
+        - Broadcast:
+            destId == NODENUM_BROADCAST → flood as DATA broadcast.
+        - Unicast:
+            If IARP has dest and distance <= zone_radius:
+                → send via nextHop (intra-zone routing).
+            Else:
+                → placeholder for IERP: currently best-effort flooding.
+        """
+
+        plen = 20
+
+        # Logical message record (same style as AODV)
+        self.messageSeq["val"] += 1
+        messageSeq = self.messageSeq["val"]
+        self.messages.append(
+            MeshMessage(self.nodeid, destId, self.env.now, messageSeq)
+        )
+
+        # Base DATA packet (ZRP)
+        base_packet = MeshPacket_ZRP(
+            self.conf,
+            self.nodes,
+            origTxNodeId=self.nodeid,
+            destId=destId,
+            txNodeId=self.nodeid,
+            packetLen=plen,
+            seq=messageSeq,
+            genTime=self.env.now,
+            wantAck=wantAck,
+            isAck=False,
+            requestId=None,
+            txTime=self.env.now,
+            verboseprint=self.verboseprint,
+            packet_type=None,      # None → DATA (non-IARP)
+            iarp_seq_num=None,
+            ierp_type=None,
+            ierp_id=None,
+            hop_count=0,
+        )
+        base_packet.data = data
+        base_packet.is_sdn_update = is_sdn_update
+
+        # =======================
+        # Broadcast DATA
+        # =======================
+        if destId == NODENUM_BROADCAST:
+            pNew = base_packet
+            # hopLimit for broadcast: use config if present, else at least zone_radius
+            default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius)
+            pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
+
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "broadcasting ZRP DATA packet", pNew.seq,
+            )
+            self.packets.append(pNew)
+            self.env.process(self.transmit(pNew))
+            return base_packet
+
+        # =======================
+        # Unicast DATA
+        # =======================
+
+        entry = self.iarp_table.get(destId, None)
+
+        # Intra-zone: we have an IARP route and dest is within zone radius
+        if entry is not None and entry.distance <= self.zone_radius:
+            pNew = base_packet
+            pNew.next_hop = entry.nextHop
+            # Keep hops constrained to the zone
+            default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius)
+            pNew.hopLimit = min(default_hl, self.zone_radius)
+
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "sending ZRP unicast packet", pNew.seq,
+                "to", destId,
+                "via nextHop", entry.nextHop,
+                "(distance", entry.distance, ")",
+            )
+            self.packets.append(pNew)
+            self.env.process(self.transmit(pNew))
+            return base_packet
+
+        # Interzone or unknown: no IARP route available
+        self.verboseprint(
+            "At time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "has no IARP route to", destId,
+            "→ would trigger IERP (placeholder).",
+        )
+
+        # TODO: proper IERP/BRP:
+        #   - enqueue base_packet in self.pending_ierp[destId]
+        #   - send ZRP IERP-RREQ etc.
+        # For now: best-effort directed flood (DATA with destId, no next_hop)
+
+        pNew = base_packet
+        default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius * 2)
+        pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
+
+        self.verboseprint(
+            "At time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "flooding ZRP DATA packet", pNew.seq,
+            "towards dest", destId,
+            "(IERP not implemented yet)",
+        )
+        self.packets.append(pNew)
+        self.env.process(self.transmit(pNew))
+        return base_packet
 
     # =====================================================================
     # IARP: Intrazone proactive routing
@@ -143,7 +270,7 @@ class MeshNode_ZRP(MeshNode):
 
         src = packet.origTxNodeId
 
-        # 🔒 Do not install routes to yourself
+        # Do not install routes to yourself
         if src == self.nodeid:
             return
 
@@ -175,7 +302,6 @@ class MeshNode_ZRP(MeshNode):
                 "seq", seq_num,
             )
 
-
     def get_iarp_table(self):
         info = {}
         for destId, entry in self.iarp_table.items():
@@ -192,6 +318,7 @@ class MeshNode_ZRP(MeshNode):
     # =====================================================================
 
     def initiate_route_discovery(self, destId):
+        # Placeholder for future IERP (interzone) logic
         pass
 
     def handle_ierp_rreq(self, packet):
@@ -205,10 +332,11 @@ class MeshNode_ZRP(MeshNode):
             if packet.packet_type == "IARP":
                 self.handle_iarp(packet)
             elif packet.packet_type == "IERP":
+                # Hook for future IERP control packets
                 pass
 
     # =====================================================================
-    # RECEIVE WITH MANAGED FLOODING FOR IARP
+    # RECEIVE WITH MANAGED FLOODING FOR IARP + DATA
     # =====================================================================
 
     def receive(self, pipe):
@@ -399,14 +527,20 @@ class MeshNode_ZRP(MeshNode):
                             )
                             if packet.seq not in self.SensorPacketsReceived:
                                 self.SensorPacketsReceived[packet.seq] = 0
-                                if packet.origTxNodeId not in self.SensorPacketsReceivedOrigId:
+                                if (
+                                    packet.origTxNodeId
+                                    not in self.SensorPacketsReceivedOrigId
+                                ):
                                     self.SensorPacketsReceivedOrigId[
                                         packet.origTxNodeId
                                     ] = {}
                                 self.SensorPacketsReceivedOrigId[packet.origTxNodeId][
                                     packet.seq
                                 ] = 0
-                                if packet.origTxNodeId not in self.SensorPacketsDelays:
+                                if (
+                                    packet.origTxNodeId
+                                    not in self.SensorPacketsDelays
+                                ):
                                     self.SensorPacketsDelays[packet.origTxNodeId] = []
                                 self.SensorPacketsDelays[packet.origTxNodeId].append(
                                     self.env.now - packet.genTime
@@ -454,7 +588,10 @@ class MeshNode_ZRP(MeshNode):
                                         "node", self.nodeid,
                                         "rebroadcasted broadcast packet", pNew.seq,
                                     )
-                                    if packet.origTxNodeId not in self.BroadcastPacketsDelays:
+                                    if (
+                                        packet.origTxNodeId
+                                        not in self.BroadcastPacketsDelays
+                                    ):
                                         self.BroadcastPacketsDelays[
                                             packet.origTxNodeId
                                         ] = []
