@@ -254,6 +254,7 @@ class MeshNode_AODV(MeshNode):
                 if not self.isTransmitting:
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'started receiving packet', packet.seq, 'from', packet.txNodeId)
                     packet.onAirToN[self.nodeid] = False
+                    self.totalEnergyConsumedJ += (self.conf.Rx_Powr * (packet.timeOnAir / 1000.0))  # Power (W) * time (s) = energy (J)
                     self.isReceiving.append(True)
                 else:  # if you were currently transmitting, you could not have sensed it
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'was transmitting, so could not receive packet', packet.seq)

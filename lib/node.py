@@ -84,6 +84,8 @@ class MeshNode:
         self.channelUtilizationIndex = 0  # which "bucket" is current
         self.prevTxAirUtilization = 0.0   # how much total tx air-time had been used at last sample
 
+        self.totalEnergyConsumedJ = 0.0  # total energy consumed in Joules
+
         env.process(self.track_channel_utilization(env))
         if (not self.isRepeater) and (not self.isRouter):  # repeaters don't generate messages themselves
             env.process(self.generate_message())
@@ -122,6 +124,8 @@ class MeshNode:
 
             self.prevTxAirUtilization = curTotalAirtime
             self.channelUtilizationIndex = (self.channelUtilizationIndex + 1) % self.conf.CHANNEL_UTILIZATION_PERIODS
+
+            self.totalEnergyConsumedJ += (self.conf.Idle_Powr * (self.conf.TEN_SECONDS_INTERVAL / 1000.0))  # Power (W) * time (s) = energy (J)
 
     def channel_utilization_percent(self) -> float:
         """
@@ -306,6 +310,7 @@ class MeshNode:
                 packet.endTime = self.env.now + packet.timeOnAir
                 self.txAirUtilization += packet.timeOnAir
                 self.airUtilization += packet.timeOnAir
+                self.totalEnergyConsumedJ += (self.conf.Tx_Powr * (packet.timeOnAir / 1000.0))  # Power (W) * time (s) = energy (J)
                 self.bc_pipe.put(packet)
                 self.isTransmitting = True
                 yield self.env.timeout(packet.timeOnAir)
@@ -326,6 +331,7 @@ class MeshNode:
                 if not self.isTransmitting:
                     self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'started receiving packet', p.seq, 'from', p.txNodeId)
                     p.onAirToN[self.nodeid] = False
+                    self.totalEnergyConsumedJ += (self.conf.Rx_Powr * (p.timeOnAir / 1000.0))  # Power (W) * time (s) = energy (J)
                     self.isReceiving.append(True)
                 else:  # if you were currently transmitting, you could not have sensed it
                     self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'was transmitting, so could not receive packet', p.seq)
