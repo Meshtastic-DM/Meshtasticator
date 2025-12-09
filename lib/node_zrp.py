@@ -138,26 +138,17 @@ class MeshNode_ZRP(MeshNode):
             self.env.process(self.transmit(p))
 
     def handle_iarp(self, packet: MeshPacket_ZRP):
-        """
-        Handle an incoming IARP packet.
-
-        Minimal behavior for now:
-          - Treat the sender as a 1-hop neighbor inside the zone.
-          - Update or insert an IARPEntry for that neighbor using seq_num.
-          - You can extend this later to carry multiple entries in the IARP payload.
-        """
-        # Ignore non-IARP packets
         if not isinstance(packet, MeshPacket_ZRP) or packet.packet_type != "IARP":
             return
 
         src = packet.origTxNodeId
-        distance = packet.hop_count  # from this node to the origin of the IARP (one hop)
+        # at the receiver, distance is at least 1 hop from source
+        distance = getattr(packet, "hop_count", 0) + 1
         seq_num = packet.iarp_seq_num
         now = self.env.now
 
         existing = self.iarp_table.get(src, None)
 
-        # Update rule: newer sequence number OR same seq but shorter distance
         if (
             existing is None
             or seq_num > existing.seq_num
@@ -165,7 +156,7 @@ class MeshNode_ZRP(MeshNode):
         ):
             self.iarp_table[src] = IARPEntry(
                 destId=src,
-                nextHop=packet.txNodeId,  # neighbor from which we heard this
+                nextHop=packet.txNodeId,
                 distance=distance,
                 seq_num=seq_num,
                 last_updated=now,
@@ -178,6 +169,7 @@ class MeshNode_ZRP(MeshNode):
                 "distance", distance,
                 "seq", seq_num,
             )
+
 
     def get_iarp_table(self):
         """
@@ -234,3 +226,369 @@ class MeshNode_ZRP(MeshNode):
             elif packet.packet_type == "IERP":
                 # Later: dispatch to handle_ierp_rreq / handle_ierp_rrep
                 pass
+    
+
+    def receive(self, pipe):
+        while True:
+            packet = yield pipe.get()
+
+            # ----------------- Start of reception -----------------
+            if (
+                packet.sensedByN[self.nodeid]
+                and not packet.collidedAtN[self.nodeid]
+                and packet.onAirToN[self.nodeid]
+            ):
+                if not self.isTransmitting:
+                    self.verboseprint(
+                        "At time",
+                        round(self.env.now, 3),
+                        "node",
+                        self.nodeid,
+                        "started receiving packet",
+                        packet.seq,
+                        "from",
+                        packet.txNodeId,
+                    )
+                    packet.onAirToN[self.nodeid] = False
+                    self.isReceiving.append(True)
+                else:
+                    # was transmitting → cannot receive
+                    self.verboseprint(
+                        "At time",
+                        round(self.env.now, 3),
+                        "node",
+                        self.nodeid,
+                        "was transmitting, so could not receive packet",
+                        packet.seq,
+                    )
+                    packet.sensedByN[self.nodeid] = False
+                    packet.onAirToN[self.nodeid] = False
+
+            # ----------------- End of reception -----------------
+            elif packet.sensedByN[self.nodeid]:
+                try:
+                    self.isReceiving[self.isReceiving.index(True)] = False
+                except Exception:
+                    pass
+
+                self.airUtilization += packet.timeOnAir
+
+                if packet.collidedAtN[self.nodeid]:
+                    self.verboseprint(
+                        "At time",
+                        round(self.env.now, 3),
+                        "node",
+                        self.nodeid,
+                        "could not decode packet.",
+                    )
+                    continue
+
+                # Drop if hop_count >= 7
+                if hasattr(packet, "hop_count") and packet.hop_count >= 7:
+                    self.verboseprint(
+                        "At time",
+                        round(self.env.now, 3),
+                        "node",
+                        self.nodeid,
+                        "dropped packet",
+                        packet.seq,
+                        "due to hop_count >= 7",
+                    )
+                    continue
+
+                packet.receivedAtN[self.nodeid] = True
+                self.verboseprint(
+                    "At time",
+                    round(self.env.now, 3),
+                    "node",
+                    self.nodeid,
+                    "received packet",
+                    packet.seq,
+                    "with delay",
+                    round(self.env.now - packet.genTime, 2),
+                )
+                self.delays.append(self.env.now - packet.genTime)
+
+                # ----------------- ZRP control handling (IARP only for now) -----------------
+                if isinstance(packet, MeshPacket_ZRP) and packet.packet_type == "IARP":
+                    # Only IARP implemented now
+                    self.handle_iarp(packet)
+                    # No ACK, no further data processing for IARP
+                    continue
+
+                # ----------------- Data / ACK handling -----------------
+                if packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
+                    # Generate ACK if required
+                    if not packet.isAck and packet.wantAck:
+                        self.messageSeq["val"] += 1
+                        messageSeq = self.messageSeq["val"]
+                        self.messages.append(
+                            MeshMessage(
+                                self.nodeid, packet.origTxNodeId, self.env.now, messageSeq
+                            )
+                        )
+                        # ACK as ZRP-DATA packet (packet_type=None)
+                        ack_packet = MeshPacket_ZRP(
+                            self.conf,
+                            self.nodes,
+                            self.nodeid,             # origTxNodeId
+                            packet.origTxNodeId,     # destId
+                            self.nodeid,             # txNodeId
+                            10,                      # packetLen
+                            messageSeq,
+                            self.env.now,
+                            False,                   # wantAck
+                            True,                    # isAck
+                            packet.seq,              # requestId
+                            self.env.now,
+                            self.verboseprint,
+                            None,                    # packet_type = None (DATA/ACK)
+                            None,                    # iarp_seq_num
+                            None,                    # ierp_type
+                            None,                    # ierp_id
+                            getattr(packet, "hop_count", 0) + 1,
+                        )
+                        self.packets.append(ack_packet)
+                        self.env.process(self.transmit(ack_packet))
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "sent ACK for packet",
+                            packet.seq,
+                            "to",
+                            packet.origTxNodeId,
+                        )
+
+                    self.verboseprint(
+                        "At time",
+                        round(self.env.now, 3),
+                        "node",
+                        self.nodeid,
+                        "received packet",
+                        packet.seq,
+                        "from",
+                        packet.origTxNodeId,
+                    )
+
+                    if not packet.isAck:
+                        orginTxNodeId = packet.origTxNodeId
+                        orginTxNode = None
+                        for n in self.nodes:
+                            if n.nodeid == orginTxNodeId:
+                                orginTxNode = n
+                                break
+
+                        # ----------------- Sensor → Control center stats -----------------
+                        if orginTxNode and orginTxNode.simRole == "Sensor":
+                            self.verboseprint(
+                                "At time",
+                                round(self.env.now, 3),
+                                "node",
+                                self.nodeid,
+                                "is a Control node receiving a packet from Sensor node",
+                                orginTxNodeId,
+                            )
+                            if packet.seq not in self.SensorPacketsReceived:
+                                self.SensorPacketsReceived[packet.seq] = 0
+                                if packet.origTxNodeId not in self.SensorPacketsReceivedOrigId:
+                                    self.SensorPacketsReceivedOrigId[
+                                        packet.origTxNodeId
+                                    ] = {}
+                                self.SensorPacketsReceivedOrigId[packet.origTxNodeId][
+                                    packet.seq
+                                ] = 0
+                                if packet.origTxNodeId not in self.SensorPacketsDelays:
+                                    self.SensorPacketsDelays[packet.origTxNodeId] = []
+                                self.SensorPacketsDelays[packet.origTxNodeId].append(
+                                    self.env.now - packet.genTime
+                                )
+                            self.SensorPacketsReceived[packet.seq] += 1
+                            self.SensorPacketsReceivedOrigId[packet.origTxNodeId][
+                                packet.seq
+                            ] += 1
+
+                        # ----------------- Control_Center broadcast handling -----------------
+                        elif orginTxNode and orginTxNode.simRole == "Control_Center":
+                            if packet.seq not in self.BroadcastPacketsReceived:
+                                self.BroadcastPacketsReceived[packet.seq] = 0
+                                # First time seeing this broadcast → rebroadcast (subject to hop_count)
+                                if not self.isClientMute:
+                                    self.verboseprint(
+                                        "At time",
+                                        round(self.env.now, 3),
+                                        "node",
+                                        self.nodeid,
+                                        "rebroadcasts received broadcast packet",
+                                        packet.seq,
+                                    )
+                                    pNew = MeshPacket_ZRP(
+                                        self.conf,
+                                        self.nodes,
+                                        packet.origTxNodeId,
+                                        packet.destId,
+                                        self.nodeid,
+                                        packet.packetLen,
+                                        packet.seq,
+                                        packet.genTime,
+                                        packet.wantAck,
+                                        packet.isAck,
+                                        None,
+                                        self.env.now,
+                                        self.verboseprint,
+                                        None,   # packet_type = None (DATA)
+                                        None,
+                                        None,
+                                        None,
+                                        getattr(packet, "hop_count", 0) + 1,
+                                    )
+                                    self.packets.append(pNew)
+                                    self.env.process(self.transmit(pNew))
+                                    self.verboseprint(
+                                        "At time",
+                                        round(self.env.now, 3),
+                                        "node",
+                                        self.nodeid,
+                                        "rebroadcasted broadcast packet",
+                                        pNew.seq,
+                                    )
+                                    if (
+                                        packet.origTxNodeId
+                                        not in self.BroadcastPacketsDelays
+                                    ):
+                                        self.BroadcastPacketsDelays[
+                                            packet.origTxNodeId
+                                        ] = []
+                                    self.BroadcastPacketsDelays[
+                                        packet.origTxNodeId
+                                    ].append(self.env.now - packet.genTime)
+                            self.BroadcastPacketsReceived[packet.seq] += 1
+
+                        # ----------------- DM unicast stats -----------------
+                        elif orginTxNode and orginTxNode.simRole == "DM":
+                            if packet.seq not in self.DMPacketsReceived:
+                                self.DMPacketsReceived[packet.seq] = 0
+                                if (
+                                    packet.origTxNodeId
+                                    not in self.DMPacketsReceivedOrigId
+                                ):
+                                    self.DMPacketsReceivedOrigId[
+                                        packet.origTxNodeId
+                                    ] = {}
+                                self.DMPacketsReceivedOrigId[packet.origTxNodeId][
+                                    packet.seq
+                                ] = 0
+                                if (
+                                    packet.origTxNodeId
+                                    not in self.DMPacketsDelays
+                                ):
+                                    self.DMPacketsDelays[packet.origTxNodeId] = []
+                                self.DMPacketsDelays[packet.origTxNodeId].append(
+                                    self.env.now - packet.genTime
+                                )
+                            self.DMPacketsReceived[packet.seq] += 1
+                            self.DMPacketsReceivedOrigId[packet.origTxNodeId][
+                                packet.seq
+                            ] += 1
+
+                    else:
+                        # ACK receive stats
+                        if self.simRole == "Sensor":
+                            if packet.seq not in self.SensorPacketsAcked:
+                                self.SensorPacketsAcked[packet.seq] = 0
+                                self.ACKPacketsDelays.append(
+                                    self.env.now - packet.genTime
+                                )
+                            self.SensorPacketsAcked[packet.seq] += 1
+                        elif self.simRole == "DM":
+                            if packet.seq not in self.DMPacketsAcked:
+                                self.DMPacketsAcked[packet.seq] = 0
+                                self.ACKPacketsDelays.append(
+                                    self.env.now - packet.genTime
+                                )
+                            self.DMPacketsAcked[packet.seq] += 1
+
+                else:
+                    # Not for me and not pure broadcast delivery case → optional forwarding
+                    if not self.isClientMute:
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "rebroadcasts received packet",
+                            packet.seq,
+                        )
+                        pNew = MeshPacket_ZRP(
+                            self.conf,
+                            self.nodes,
+                            packet.origTxNodeId,
+                            packet.destId,
+                            self.nodeid,
+                            packet.packetLen,
+                            packet.seq,
+                            packet.genTime,
+                            packet.wantAck,
+                            packet.isAck,
+                            None,
+                            self.env.now,
+                            self.verboseprint,
+                            None,   # packet_type = None (DATA)
+                            None,
+                            None,
+                            None,
+                            getattr(packet, "hop_count", 0) + 1,
+                        )
+                        self.packets.append(pNew)
+                        self.env.process(self.transmit(pNew))
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "rebroadcasted packet",
+                            pNew.seq,
+                            "to",
+                            pNew.destId,
+                        )
+                    else:
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "dropped packet",
+                            packet.seq,
+                            "because client is muted",
+                        )
+
+                # ----------------- ACK bookkeeping for queue -----------------
+                for sentPacket in self.packets:
+                    # implicit ACK (same seq still in queue)
+                    if sentPacket.txNodeId == self.nodeid and sentPacket.seq == packet.seq:
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "received implicit ACK for message in queue.",
+                        )
+                        ackReceived = True
+                        sentPacket.ackReceived = True
+                    # real ACK
+                    if (
+                        sentPacket.origTxNodeId == self.nodeid
+                        and packet.isAck
+                        and sentPacket.seq == packet.requestId
+                    ):
+                        self.verboseprint(
+                            "At time",
+                            round(self.env.now, 3),
+                            "node",
+                            self.nodeid,
+                            "received real ACK.",
+                        )
+                        realAckReceived = True
+                        sentPacket.ackReceived = True
+
