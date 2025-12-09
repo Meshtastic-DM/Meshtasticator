@@ -154,7 +154,17 @@ def estimate_path_loss(conf, dist, freq, txZ=conf.HM, rxZ=conf.HM):
         Lpl = (44.9 - 6.55 * math.log10(txZ)) * (math.log10(dist) - 3.0) \
             + 45.5 + (35.46 - 1.1 * rxZ) * (math.log10(freq) - 6.0) \
             - 13.82 * math.log10(rxZ) + 0.7 * rxZ + C
+        # ---- Nakagami fading on top of path loss ----
+    if getattr(conf, "USE_NAKAGAMI", False):
+        m = getattr(conf, "NAKAGAMI_M", 1.0)  # m=1 -> Rayleigh, m>1 milder fading
 
+        # Power gain g ~ Gamma(m, scale=1/m) -> E[g] = 1
+        g = random.gammavariate(m, 1.0 / m)
+
+        # Convert to a dB "extra loss" term (negative when g > 1)
+        F_dB = -10.0 * math.log10(g)
+
+        Lpl += F_dB
     return Lpl
 
 
