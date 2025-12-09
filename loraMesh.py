@@ -174,15 +174,43 @@ if conf.MOVEMENT_ENABLED:
 	print("Number of moving nodes w/ GPS:", gpsEnabled)
 
 graph.save()
+
 for node in nodes:
-	print(node)
-	routeTable = node.get_route_table()
-	if len(routeTable) > 0:
-		print(f"\nNode {node.nodeid} route table:")
-		for dest, entry in routeTable.items():
-			print(f"  Dest: {dest}, Next Hop: {entry['nextHop']}, Hop Count: {entry['hopCount']}, Seq: {entry['destSeqNum']}")
-	else:
-		print(f"\nNode {node.nodeid} has an empty route table.")
+    print(node)
+
+    # ---------- AODV routing table ----------
+    if isinstance(node, MeshNode_AODV):
+        routeTable = node.get_route_table()
+        if len(routeTable) > 0:
+            print(f"\nNode {node.nodeid} AODV route table:")
+            for dest, entry in routeTable.items():
+                print(
+                    f"  Dest: {dest}, "
+                    f"Next Hop: {entry['nextHop']}, "
+                    f"Hop Count: {entry['hopCount']}, "
+                    f"Seq: {entry['destSeqNum']}"
+                )
+        else:
+            print(f"\nNode {node.nodeid} has an empty AODV route table.")
+
+    # ---------- ZRP IARP table ----------
+    elif isinstance(node, MeshNode_ZRP):
+        iarpTable = node.get_iarp_table()
+        if len(iarpTable) > 0:
+            print(f"\nNode {node.nodeid} ZRP IARP table:")
+            for dest, entry in iarpTable.items():
+                print(
+                    f"  Dest: {dest}, "
+                    f"Next Hop: {entry['nextHop']}, "
+                    f"Distance: {entry['distance']}, "
+                    f"Seq: {entry['seq_num']}"
+                )
+        else:
+            print(f"\nNode {node.nodeid} has an empty ZRP IARP table.")
+
+    else:
+        print(f"\nNode {node.nodeid} has no routing/IARP table interface.")
+
 
 if conf.PLOT:
 	plot_schedule(conf, packets, messages)
