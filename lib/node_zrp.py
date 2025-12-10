@@ -685,17 +685,124 @@ class MeshNode_ZRP(MeshNode):
                 # IERP control packets – RREQ / RREP
                 # ==================================================
                 if isinstance(packet, MeshPacket_ZRP) and packet.packet_type == "IERP":
-                    # Only the intended border node should process this
-                    if packet.destId != self.nodeid:
-                        # Not my IERP RREQ/RREP → ignore as control
+
+                    # 1) If I'm the intended border / query node → process control
+                    if packet.destId == self.nodeid:
+                        if packet.ierp_type == "RREQ":
+                            self.handle_ierp_rreq(packet)
+                        elif packet.ierp_type == "RREP":
+                            self.handle_ierp_rrep(packet)
+                        # Done as control, don't go to DATA or generic forwarding
                         continue
 
-                    if packet.ierp_type == "RREQ":
-                        self.handle_ierp_rreq(packet)
-                    elif packet.ierp_type == "RREP":
-                        self.handle_ierp_rrep(packet)
-                    # IERP is control-only; do not treat as data
+                    # 2) Transit hop: obey next_hop if present
+                    if (
+                        hasattr(packet, "next_hop")
+                        and packet.next_hop is not None
+                        and packet.next_hop != self.nodeid
+                    ):
+                        # I just overheard it, not my turn to forward
+                        self.verboseprint(
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "ignores IERP packet", packet.seq,
+                            "because next_hop is", packet.next_hop,
+                        )
+                        continue
+
+                    # 3) Compute hop_count as seen *after* this node
+                    prev_hops = getattr(packet, "hop_count", 0)
+                    curr_hops = prev_hops + 1   # distance from origin including this node
+
+                    # 3b) If beyond my zone, install coarse IERP entry for the origin
+                    if curr_hops > self.zone_radius:
+                        origin = packet.origTxNodeId
+                        existing = self.ierp_table.get(origin)
+                        if existing is None or packet.ierp_id > existing.seq_num:
+                            self.ierp_table[origin] = IARPEntry(
+                                destId=origin,
+                                nextHop=packet.txNodeId,      # send back toward where RREQ came from
+                                distance=curr_hops,
+                                seq_num=packet.ierp_id,
+                                last_updated=self.env.now,
+                            )
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "updated IERP entry for origin", origin,
+                                "via nextHop", packet.txNodeId,
+                                "distance", curr_hops,
+                                "ierp_id", packet.ierp_id,
+                            )
+
+                    # 4) TTL / hop-limit handling
+                    hl = getattr(packet, "hopLimit", None)
+                    if hl is not None:
+                        if hl <= 0:
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "drops IERP packet", packet.seq,
+                                "due to hopLimit <= 0",
+                            )
+                            continue
+                        hl -= 1
+
+                    # 5) Route towards this packet.destId using my IARP
+                    route = self.iarp_table.get(packet.destId)
+                    if route is None or route.distance > self.zone_radius:
+                        self.verboseprint(
+                            "At time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "has no IARP route for IERP dest", packet.destId,
+                            "→ dropping.",
+                        )
+                        continue
+
+                    # 6) Forward as IERP again (NOT DATA)
+                    fwd = MeshPacket_ZRP(
+                        self.conf,
+                        self.nodes,
+                        origTxNodeId=packet.origTxNodeId,
+                        destId=packet.destId,
+                        txNodeId=self.nodeid,
+                        packetLen=packet.packetLen,
+                        seq=packet.seq,
+                        genTime=packet.genTime,
+                        wantAck=False,
+                        isAck=False,
+                        requestId=None,
+                        txTime=self.env.now,
+                        verboseprint=self.verboseprint,
+                        packet_type="IERP",            # keep as IERP
+                        iarp_seq_num=None,
+                        ierp_type=packet.ierp_type,    # RREQ or RREP
+                        ierp_id=packet.ierp_id,
+                        hop_count=curr_hops,
+                    )
+
+                    # preserve extended fields
+                    fwd.ierp_destId   = getattr(packet, "ierp_destId", None)
+                    fwd.covered_nodes = getattr(packet, "covered_nodes", None)
+                    fwd.hopLimit      = hl
+                    fwd.next_hop      = route.nextHop
+
+                    self.verboseprint(
+                        "At time", round(self.env.now, 3),
+                        "node", self.nodeid,
+                        "forwards IERP", fwd.ierp_type,
+                        "id", fwd.ierp_id,
+                        "towards dest", fwd.destId,
+                        "via nextHop", fwd.next_hop,
+                        "hop_count", fwd.hop_count,
+                        "hopLimit", fwd.hopLimit,
+                    )
+                    self.packets.append(fwd)
+                    self.env.process(self.transmit(fwd))
+
+                    # IMPORTANT: do not let IERP fall into DATA / forwarding sections
                     continue
+
 
 
 
