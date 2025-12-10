@@ -460,7 +460,7 @@ class MeshNode_ZRP(MeshNode):
                 # Data / ACK handling (non-IARP)
                 # ==================================================
                 if packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
-                    # Generate ACK if required
+                    # ------------ deliver to local app + generate ACK ------------
                     if not packet.isAck and packet.wantAck:
                         self.messageSeq["val"] += 1
                         messageSeq = self.messageSeq["val"]
@@ -509,6 +509,7 @@ class MeshNode_ZRP(MeshNode):
                         "from", packet.origTxNodeId,
                     )
 
+                    # ------------ application-facing stats (unchanged) ------------
                     if not packet.isAck:
                         orginTxNodeId = packet.origTxNodeId
                         orginTxNode = None
@@ -550,11 +551,12 @@ class MeshNode_ZRP(MeshNode):
                                 packet.seq
                             ] += 1
 
-                        # Control_Center broadcast handling
+                        # Control_Center broadcast handling (only for *broadcast* app packets)
                         elif orginTxNode and orginTxNode.simRole == "Control_Center":
                             if packet.seq not in self.BroadcastPacketsReceived:
                                 self.BroadcastPacketsReceived[packet.seq] = 0
-                                if not self.isClientMute:
+                                # For app-level broadcast, we still flood
+                                if not self.isClientMute and packet.destId == NODENUM_BROADCAST:
                                     self.verboseprint(
                                         "At time", round(self.env.now, 3),
                                         "node", self.nodeid,
@@ -644,49 +646,140 @@ class MeshNode_ZRP(MeshNode):
                                 )
                             self.DMPacketsAcked[packet.seq] += 1
 
+                # ==================================================
+                # FORWARDING (not for me, not broadcast-to-app)
+                # ==================================================
                 else:
-                    # Not for me and not pure broadcast → optional forwarding (data)
-                    if not self.isClientMute:
-                        self.verboseprint(
-                            "At time", round(self.env.now, 3),
-                            "node", self.nodeid,
-                            "rebroadcasts received packet", packet.seq,
-                        )
-                        pNew = MeshPacket_ZRP(
+                    # ------------- UNICAST: use IARP hop-by-hop -------------
+                    if packet.destId != NODENUM_BROADCAST:
+                        # If this packet has a next_hop and it's not me → ignore
+                        if (
+                            hasattr(packet, "next_hop")
+                            and packet.next_hop is not None
+                            and packet.next_hop != self.nodeid
+                        ):
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "ignores packet", packet.seq,
+                                "because next_hop is", packet.next_hop,
+                            )
+                            continue
+
+                        if self.isClientMute:
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "dropped unicast packet", packet.seq,
+                                "because client is muted",
+                            )
+                            continue
+
+                        # Decrement hopLimit if present
+                        hl = getattr(packet, "hopLimit", None)
+                        if hl is not None:
+                            if hl <= 0:
+                                self.verboseprint(
+                                    "At time", round(self.env.now, 3),
+                                    "node", self.nodeid,
+                                    "drops unicast packet", packet.seq,
+                                    "due to hopLimit <= 0",
+                                )
+                                continue
+                            hl -= 1
+
+                        # Look up next hop from *my* IARP table
+                        route = self.iarp_table.get(packet.destId)
+                        if route is None or route.distance > self.zone_radius:
+                            # No intrazone route → optional fallback: drop or flood
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "has no IARP route for dest", packet.destId,
+                                "→ dropping (or you can flood here if you want).",
+                            )
+                            continue
+
+                        # Build next hop packet
+                        fwd = MeshPacket_ZRP(
                             self.conf,
                             self.nodes,
-                            packet.origTxNodeId,
-                            packet.destId,
-                            self.nodeid,
+                            packet.origTxNodeId,      # still original source
+                            packet.destId,            # final destination
+                            self.nodeid,              # current transmitter
                             packet.packetLen,
                             packet.seq,
                             packet.genTime,
                             packet.wantAck,
                             packet.isAck,
-                            None,
+                            packet.requestId,
                             self.env.now,
                             self.verboseprint,
-                            None,   # packet_type = None (DATA)
+                            None,                     # DATA
                             None,
                             None,
                             None,
                             getattr(packet, "hop_count", 0) + 1,
                         )
-                        self.packets.append(pNew)
-                        self.env.process(self.transmit(pNew))
+                        fwd.next_hop = route.nextHop
+                        if hl is not None:
+                            fwd.hopLimit = hl
+
+                        self.packets.append(fwd)
+                        self.env.process(self.transmit(fwd))
                         self.verboseprint(
                             "At time", round(self.env.now, 3),
                             "node", self.nodeid,
-                            "rebroadcasted packet", pNew.seq,
-                            "to", pNew.destId,
+                            "forwarded unicast packet", fwd.seq,
+                            "towards dest", fwd.destId,
+                            "via nextHop", fwd.next_hop,
+                            "hop_count", fwd.hop_count,
+                            "hopLimit", getattr(fwd, 'hopLimit', None),
                         )
+
+                    # ------------- BROADCAST (non-app) – still flood -------------
                     else:
-                        self.verboseprint(
-                            "At time", round(self.env.now, 3),
-                            "node", self.nodeid,
-                            "dropped packet", packet.seq,
-                            "because client is muted",
-                        )
+                        if not self.isClientMute:
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "rebroadcasts received broadcast packet", packet.seq,
+                            )
+                            pNew = MeshPacket_ZRP(
+                                self.conf,
+                                self.nodes,
+                                packet.origTxNodeId,
+                                packet.destId,
+                                self.nodeid,
+                                packet.packetLen,
+                                packet.seq,
+                                packet.genTime,
+                                packet.wantAck,
+                                packet.isAck,
+                                None,
+                                self.env.now,
+                                self.verboseprint,
+                                None,   # DATA broadcast
+                                None,
+                                None,
+                                None,
+                                getattr(packet, "hop_count", 0) + 1,
+                            )
+                            self.packets.append(pNew)
+                            self.env.process(self.transmit(pNew))
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "rebroadcasted broadcast packet", pNew.seq,
+                                "to", pNew.destId,
+                            )
+                        else:
+                            self.verboseprint(
+                                "At time", round(self.env.now, 3),
+                                "node", self.nodeid,
+                                "dropped broadcast packet", packet.seq,
+                                "because client is muted",
+                            )
 
                 # ----------------- ACK bookkeeping for queue -----------------
                 for sentPacket in self.packets:
@@ -696,7 +789,6 @@ class MeshNode_ZRP(MeshNode):
                             "node", self.nodeid,
                             "received implicit ACK for message in queue.",
                         )
-                        ackReceived = True
                         sentPacket.ackReceived = True
                     if (
                         sentPacket.origTxNodeId == self.nodeid
@@ -708,5 +800,4 @@ class MeshNode_ZRP(MeshNode):
                             "node", self.nodeid,
                             "received real ACK.",
                         )
-                        realAckReceived = True
                         sentPacket.ackReceived = True
