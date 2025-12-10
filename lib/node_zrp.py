@@ -349,6 +349,18 @@ class MeshNode_ZRP(MeshNode):
             }
         return info
 
+    def get_ierp_table(self):
+        info = {}
+        for destId, entry in self.ierp_table.items():
+            info[destId] = {
+                "nextHop": entry.nextHop,
+                "distance": entry.distance,
+                "seq_num": entry.seq_num,
+                "last_updated": entry.last_updated,
+            }
+        return info
+
+
     # =====================================================================
     # IERP / BRP and other ZRP parts – to be implemented later
     # =====================================================================
@@ -498,16 +510,32 @@ class MeshNode_ZRP(MeshNode):
             # TODO: send IERP RREP based on IARP route
             return
 
-        # Optionally, store coarse inter-zone info about the origin
+        # Store coarse inter-zone info about the origin once RREQ has gone
+        # beyond my intrazone radius (i.e., inter-zone information).
         if packet.hop_count > self.zone_radius:
             origin = packet.origTxNodeId
-            self.ierp_table[origin] = IARPEntry(
-                destId=origin,
-                nextHop=packet.txNodeId,
-                distance=packet.hop_count,
-                seq_num=0,
-                last_updated=self.env.now,
-            )
+            existing = self.ierp_table.get(origin)
+
+            # Use ierp_id as a "sequence number" for freshness
+            if existing is None or packet.ierp_id > existing.seq_num:
+                self.ierp_table[origin] = IARPEntry(
+                    destId=origin,
+                    # To reach the origin zone, send towards the node we just
+                    # received this RREQ from (reverse direction).
+                    nextHop=packet.txNodeId,
+                    distance=packet.hop_count,
+                    seq_num=packet.ierp_id,
+                    last_updated=self.env.now,
+                )
+                self.verboseprint(
+                    "At time", round(self.env.now, 3),
+                    "node", self.nodeid,
+                    "updated IERP entry for origin", origin,
+                    "via nextHop", packet.txNodeId,
+                    "distance", packet.hop_count,
+                    "ierp_id", packet.ierp_id,
+                )
+
 
         # -------------------------------
         # Bordercast further to peripherals not in covered_nodes
