@@ -82,9 +82,39 @@ class MeshNode_ZRP(MeshNode):
         # For IARP duplicate suppression
         self.seen_iarp = set()  # (origTxNodeId, iarp_seq_num)
 
+        # ------------- IERP state ----------------
+        self.ierp_seq_num = 0
+        self.ierp_table: dict[int, IARPEntry] = {}  # optional coarse inter-zone info
+        self.processed_ierp_rreq = set()  # (origTxNodeId, ierp_id)
+        self.processed_ierp_rrep = set()  # (origTxNodeId, ierp_id)
+        self.hopLimit = getattr(self.conf, "hopLimit", 3)
 
         # Start periodic IARP process
         self.env.process(self._iarp_periodic_process())
+
+    # =====================================================================
+    # Helpers for ZRP / IERP
+    # =====================================================================
+
+    def get_peripheral_neighbors(self):
+        """Nodes at exactly zone_radius hops in IARP table."""
+        return [
+            entry
+            for entry in self.iarp_table.values()
+            if entry.distance == self.zone_radius
+        ]
+
+    def get_intrazone_nodes_set(self):
+        """
+        All nodes in my zone (distance <= zone_radius) plus myself.
+        Used to populate / grow covered_nodes for IERP RREQ.
+        """
+        s = {self.nodeid}
+        for entry in self.iarp_table.values():
+            if entry.distance <= self.zone_radius:
+                s.add(entry.destId)
+        return s
+
 
     # =====================================================================
     # ZRP send_packet: DATA (unicast + broadcast)
@@ -143,8 +173,9 @@ class MeshNode_ZRP(MeshNode):
         if destId == NODENUM_BROADCAST:
             pNew = base_packet
             # hopLimit for broadcast: use config if present, else at least zone_radius
-            default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius)
+            default_hl = getattr(self, "hopLimit", self.zone_radius)
             pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
+
 
             self.verboseprint(
                 "At time", round(self.env.now, 3),
@@ -166,8 +197,9 @@ class MeshNode_ZRP(MeshNode):
             pNew = base_packet
             pNew.next_hop = entry.nextHop
             # Keep hops constrained to the zone
-            default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius)
+            default_hl = getattr(self, "hopLimit", self.zone_radius)
             pNew.hopLimit = min(default_hl, self.zone_radius)
+
 
             self.verboseprint(
                 "At time", round(self.env.now, 3),
@@ -186,28 +218,19 @@ class MeshNode_ZRP(MeshNode):
             "At time", round(self.env.now, 3),
             "node", self.nodeid,
             "has no IARP route to", destId,
-            "→ would trigger IERP (placeholder).",
+            "→ triggering IERP route discovery.",
         )
 
-        # TODO: proper IERP/BRP:
-        #   - enqueue base_packet in self.pending_ierp[destId]
-        #   - send ZRP IERP-RREQ etc.
-        # For now: best-effort directed flood (DATA with destId, no next_hop)
+        # Queue data for later delivery when RREP arrives (optional but useful)
+        self.pending_ierp.setdefault(destId, []).append(base_packet)
 
-        pNew = base_packet
-        default_hl = getattr(self.conf, "HOP_LIMIT", self.zone_radius * 2)
-        pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
+        # Start IERP RREQ bordercast
+        self.initiate_route_discovery(destId)
 
-        self.verboseprint(
-            "At time", round(self.env.now, 3),
-            "node", self.nodeid,
-            "flooding ZRP DATA packet", pNew.seq,
-            "towards dest", destId,
-            "(IERP not implemented yet)",
-        )
-        self.packets.append(pNew)
-        self.env.process(self.transmit(pNew))
+        # For now we do NOT flood the data blindly; it will be sent once
+        # a route is discovered (when you implement RREP wiring).
         return base_packet
+
 
     # =====================================================================
     # IARP: Intrazone proactive routing
@@ -331,22 +354,245 @@ class MeshNode_ZRP(MeshNode):
     # =====================================================================
 
     def initiate_route_discovery(self, destId):
-        # Placeholder for future IERP (interzone) logic
-        pass
+        """
+        IERP RREQ bordercast.
 
-    def handle_ierp_rreq(self, packet):
-        pass
+        - destId: final query destination (application node).
+        - Each IERP-RREQ copy:
+            * destId      = peripheral node (distance == zone_radius).
+            * ierp_destId = real query destination.
+        - covered_nodes:
+            * At origin: all nodes in my intrazone set (including myself).
+        """
+        peripherals = self.get_peripheral_neighbors()
+        if not peripherals:
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "has no peripheral neighbors for IERP; discovery aborted.",
+            )
+            return
 
-    def handle_ierp_rrep(self, packet):
-        pass
+        self.ierp_seq_num += 1
+        ierp_id = self.ierp_seq_num
 
-    def handle_zrp_control(self, packet):
-        if isinstance(packet, MeshPacket_ZRP):
-            if packet.packet_type == "IARP":
-                self.handle_iarp(packet)
-            elif packet.packet_type == "IERP":
-                # Hook for future IERP control packets
-                pass
+        # Build initial covered_nodes = my intrazone (including me)
+        covered_nodes = list(self.get_intrazone_nodes_set())
+
+        for entry in peripherals:
+            rreq = MeshPacket_ZRP(
+                self.conf,
+                self.nodes,
+                origTxNodeId=self.nodeid,    # IERP origin
+                destId=entry.destId,         # peripheral node in my zone
+                txNodeId=self.nodeid,
+                packetLen=0,                 # overridden by MeshPacket_ZRP for IERP
+                seq=ierp_id,                 # can reuse for control ID
+                genTime=self.env.now,
+                wantAck=False,
+                isAck=False,
+                requestId=None,
+                txTime=self.env.now,
+                verboseprint=self.verboseprint,
+                packet_type="IERP",
+                iarp_seq_num=None,
+                ierp_type="RREQ",
+                ierp_id=ierp_id,
+                ierp_destId=destId,          # real query destination
+                hop_count=0,
+                covered_nodes=covered_nodes,
+            )
+
+            # RREQ hopLimit – use config if available, else a small radius (e.g. 7)
+            base_hl = getattr(self, "hopLimit", 3)
+            rreq.hopLimit = getattr(self.conf, "ZRP_IERP_MAX_TTL", base_hl)
+
+
+            # For PHY, we can treat this as "unicast to next_hop" (peripheral next hop)
+            rreq.next_hop = entry.nextHop
+
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "bordercasting IERP RREQ", rreq.ierp_id,
+                "for query dest", destId,
+                "to peripheral", entry.destId,
+                "via nextHop", entry.nextHop,
+                "covered_nodes", rreq.covered_nodes,
+            )
+            self.packets.append(rreq)
+            self.env.process(self.transmit(rreq))
+
+
+    def handle_ierp_rreq(self, packet: MeshPacket_ZRP):
+        if packet.packet_type != "IERP" or packet.ierp_type != "RREQ":
+            return
+
+        key = (packet.origTxNodeId, packet.ierp_id)
+        if key in self.processed_ierp_rreq:
+            self.verboseprint("ZRP: duplicate IERP RREQ dropped", key)
+            return
+        self.processed_ierp_rreq.add(key)
+
+        query_dest = getattr(packet, "ierp_destId", None)
+        if query_dest is None:
+            self.verboseprint("ZRP: IERP RREQ without ierp_destId dropped")
+            return
+
+        # -------------------------------
+        # Update hop_count and hopLimit
+        # -------------------------------
+        packet.hop_count = getattr(packet, "hop_count", 0) + 1
+
+        if packet.hopLimit is not None:
+            packet.hopLimit -= 1
+            if packet.hopLimit < 0:
+                self.verboseprint(
+                    "At time", round(self.env.now, 3),
+                    "node", self.nodeid,
+                    "drops IERP RREQ", packet.ierp_id,
+                    "due to hopLimit < 0",
+                )
+                return
+
+        # Optional global bound to prevent crazy expansion
+        if packet.hop_count > 7:
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "drops IERP RREQ", packet.ierp_id,
+                "because hop_count", packet.hop_count, "> 7",
+            )
+            return
+
+        # -------------------------------
+        # Grow covered_nodes at this node
+        # -------------------------------
+        covered = set(getattr(packet, "covered_nodes", []) or [])
+        covered |= self.get_intrazone_nodes_set()   # add my intrazone nodes
+        packet.covered_nodes = list(covered)
+
+        # -------------------------------
+        # Check termination cases
+        # -------------------------------
+        # If I am the query destination, you'd generate RREP here
+        if self.nodeid == query_dest:
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "is query dest", query_dest,
+                "→ would send IERP RREP (not yet implemented).",
+            )
+            # TODO: send IERP RREP back towards packet.origTxNodeId
+            return
+
+        # If IARP has route to query_dest, I can act as proxy responder
+        iarp_entry = self.iarp_table.get(query_dest)
+        if iarp_entry and iarp_entry.distance <= self.zone_radius:
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "has IARP route to query dest", query_dest,
+                "→ would send IERP RREP (not yet implemented).",
+            )
+            # TODO: send IERP RREP based on IARP route
+            return
+
+        # Optionally, store coarse inter-zone info about the origin
+        if packet.hop_count > self.zone_radius:
+            origin = packet.origTxNodeId
+            self.ierp_table[origin] = IARPEntry(
+                destId=origin,
+                nextHop=packet.txNodeId,
+                distance=packet.hop_count,
+                seq_num=0,
+                last_updated=self.env.now,
+            )
+
+        # -------------------------------
+        # Bordercast further to peripherals not in covered_nodes
+        # -------------------------------
+        peripherals = self.get_peripheral_neighbors()
+        if not peripherals:
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "no peripherals to continue IERP RREQ", packet.ierp_id,
+            )
+            return
+
+        for entry in peripherals:
+            # avoid immediate backtracking through same nextHop
+            if entry.nextHop == packet.txNodeId:
+                continue
+
+            # skip peripherals that are already covered
+            if entry.destId in covered:
+                continue
+
+            fwd = MeshPacket_ZRP(
+                self.conf,
+                self.nodes,
+                origTxNodeId=packet.origTxNodeId,
+                destId=entry.destId,     # new peripheral node
+                txNodeId=self.nodeid,
+                packetLen=packet.packetLen,
+                seq=packet.seq,
+                genTime=packet.genTime,
+                wantAck=False,
+                isAck=False,
+                requestId=None,
+                txTime=self.env.now,
+                verboseprint=self.verboseprint,
+                packet_type="IERP",
+                iarp_seq_num=None,
+                ierp_type="RREQ",
+                ierp_id=packet.ierp_id,
+                ierp_destId=query_dest,
+                hop_count=packet.hop_count,
+                covered_nodes=list(covered),
+            )
+            fwd.hopLimit = packet.hopLimit
+            fwd.next_hop = entry.nextHop
+
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "bordercasts IERP RREQ", fwd.ierp_id,
+                "for query dest", query_dest,
+                "to peripheral", entry.destId,
+                "via nextHop", entry.nextHop,
+                "hop_count", fwd.hop_count,
+                "covered_nodes", fwd.covered_nodes,
+            )
+            self.packets.append(fwd)
+            self.env.process(self.transmit(fwd))
+
+
+    def handle_ierp_rrep(self, packet: MeshPacket_ZRP):
+        if packet.packet_type != "IERP" or packet.ierp_type != "RREP":
+            return
+
+        key = (packet.origTxNodeId, packet.ierp_id)
+        if key in self.processed_ierp_rrep:
+            self.verboseprint("ZRP: duplicate IERP RREP dropped", key)
+            return
+        self.processed_ierp_rrep.add(key)
+
+        self.verboseprint(
+            "At time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "received IERP RREP", packet.ierp_id,
+            "from", packet.txNodeId,
+            "for dest", packet.ierp_destId,
+            "→ TODO: install route + forward / flush pending_ierp.",
+        )
+        # TODO:
+        # - install self.ierp_table[packet.ierp_destId]
+        # - if self.nodeid == original source → send pending_ierp[destId]
+        # - else forward RREP towards origTxNodeId
+
+
 
     # =====================================================================
     # RECEIVE WITH MANAGED FLOODING FOR IARP + DATA
@@ -404,7 +650,26 @@ class MeshNode_ZRP(MeshNode):
                     "received packet", packet.seq,
                     "with delay", round(self.env.now - packet.genTime, 2),
                 )
+
                 self.delays.append(self.env.now - packet.genTime)
+
+                # ==================================================
+                # IERP control packets – RREQ / RREP
+                # ==================================================
+                if isinstance(packet, MeshPacket_ZRP) and packet.packet_type == "IERP":
+                    # Only the intended border node should process this
+                    if packet.destId != self.nodeid:
+                        # Not my IERP RREQ/RREP → ignore as control
+                        continue
+
+                    if packet.ierp_type == "RREQ":
+                        self.handle_ierp_rreq(packet)
+                    elif packet.ierp_type == "RREP":
+                        self.handle_ierp_rrep(packet)
+                    # IERP is control-only; do not treat as data
+                    continue
+
+
 
                 # ==================================================
                 # IARP packets: managed flooding with zone radius
