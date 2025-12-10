@@ -750,9 +750,22 @@ class MeshNode_ZRP(MeshNode):
                             "hopLimit", getattr(fwd, 'hopLimit', None),
                         )
 
-                    # ------------- BROADCAST (non-app) – still flood -------------
+                    # ------------- BROADCAST (non-app) – still flood, but with hopLimit -------------
                     else:
                         if not self.isClientMute:
+                            # hopLimit check for generic broadcast
+                            hl = getattr(packet, "hopLimit", None)
+                            if hl is not None:
+                                if hl <= 0:
+                                    self.verboseprint(
+                                        "At time", round(self.env.now, 3),
+                                        "node", self.nodeid,
+                                        "drops broadcast packet", packet.seq,
+                                        "due to hopLimit <= 0",
+                                    )
+                                    continue
+                                hl -= 1
+
                             self.verboseprint(
                                 "At time", round(self.env.now, 3),
                                 "node", self.nodeid,
@@ -778,6 +791,9 @@ class MeshNode_ZRP(MeshNode):
                                 None,
                                 getattr(packet, "hop_count", 0) + 1,
                             )
+                            if hl is not None:
+                                pNew.hopLimit = hl
+
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                             self.verboseprint(
@@ -793,6 +809,7 @@ class MeshNode_ZRP(MeshNode):
                                 "dropped broadcast packet", packet.seq,
                                 "because client is muted",
                             )
+
 
                 # ----------------- ACK bookkeeping for queue -----------------
                 for sentPacket in self.packets:
