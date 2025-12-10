@@ -193,8 +193,9 @@ for node in nodes:
         else:
             print(f"\nNode {node.nodeid} has an empty AODV route table.")
 
-    # ---------- ZRP IARP table ----------
+    # ---------- ZRP IARP + IERP tables ----------
     elif isinstance(node, MeshNode_ZRP):
+        # IARP
         iarpTable = node.get_iarp_table()
         if len(iarpTable) > 0:
             print(f"\nNode {node.nodeid} ZRP IARP table:")
@@ -207,6 +208,21 @@ for node in nodes:
                 )
         else:
             print(f"\nNode {node.nodeid} has an empty ZRP IARP table.")
+
+        # IERP (coarse inter-zone info)
+        ierpTable = node.get_ierp_table()
+        if len(ierpTable) > 0:
+            print(f"\nNode {node.nodeid} ZRP IERP table:")
+            for dest, entry in ierpTable.items():
+                print(
+                    f"  Dest: {dest}, "
+                    f"Next Hop: {entry['nextHop']}, "
+                    f"Distance: {entry['distance']}, "
+                    f"Seq: {entry['seq_num']}"
+                )
+        else:
+            print(f"Node {node.nodeid} has an empty ZRP IERP table.")
+
 
     else:
         print(f"\nNode {node.nodeid} has no routing/IARP table interface.")
