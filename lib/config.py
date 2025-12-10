@@ -23,7 +23,7 @@ class Config:
         self.HM = 1.0  # height of each node in m
 
         ### Meshtastic specific ###
-        self.hopLimit = 3  # default 3
+        self.hopLimit = 7  # default 3
         self.router = False  # set role of each node as router (True) or normal client (False)
         self.maxRetransmission = 3  # default 3 -- not configurable by Meshtastic
         ### End of Meshtastic specific ###
