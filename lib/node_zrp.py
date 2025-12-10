@@ -79,6 +79,10 @@ class MeshNode_ZRP(MeshNode):
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
 
+        # For IARP duplicate suppression
+        self.seen_iarp = set()  # (origTxNodeId, iarp_seq_num)
+
+
         # Start periodic IARP process
         self.env.process(self._iarp_periodic_process())
 
@@ -274,6 +278,14 @@ class MeshNode_ZRP(MeshNode):
         if src == self.nodeid:
             return
 
+        # ----- duplicate suppression -----
+        key = (src, packet.iarp_seq_num)
+        if key in self.seen_iarp:
+            # already processed this IARP from this origin + seq
+            return
+        self.seen_iarp.add(key)
+        # ---------------------------------
+
         # at the receiver, distance is at least 1 hop from source
         distance = getattr(packet, "hop_count", 0) + 1
         seq_num = packet.iarp_seq_num
@@ -301,6 +313,7 @@ class MeshNode_ZRP(MeshNode):
                 "distance", distance,
                 "seq", seq_num,
             )
+
 
     def get_iarp_table(self):
         info = {}
