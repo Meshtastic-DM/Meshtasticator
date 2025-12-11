@@ -213,23 +213,39 @@ class MeshNode_ZRP(MeshNode):
             self.env.process(self.transmit(pNew))
             return base_packet
 
-        # Interzone or unknown: no IARP route available
+        # -------- 2) Try inter-zone route (IERP table) --------
+        ierp_entry = self.ierp_table.get(destId, None)
+
+        if ierp_entry is not None:
+            pNew = base_packet
+            pNew.next_hop = ierp_entry.nextHop
+            default_hl = getattr(self, "hopLimit", 3)
+            pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
+
+            self.verboseprint(
+                "At time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "sending ZRP unicast packet", pNew.seq,
+                "to", destId,
+                "via IERP nextHop", ierp_entry.nextHop,
+                "(distance", ierp_entry.distance, ")",
+            )
+            self.packets.append(pNew)
+            self.env.process(self.transmit(pNew))
+            return base_packet
+
+        # -------- 3) No route → trigger IERP RREQ --------
         self.verboseprint(
             "At time", round(self.env.now, 3),
             "node", self.nodeid,
-            "has no IARP route to", destId,
+            "has no IARP/IERP route to", destId,
             "→ triggering IERP route discovery.",
         )
 
-        # Queue data for later delivery when RREP arrives (optional but useful)
         self.pending_ierp.setdefault(destId, []).append(base_packet)
-
-        # Start IERP RREQ bordercast
         self.initiate_route_discovery(destId)
-
-        # For now we do NOT flood the data blindly; it will be sent once
-        # a route is discovered (when you implement RREP wiring).
         return base_packet
+
 
 
     # =====================================================================
@@ -713,7 +729,7 @@ class MeshNode_ZRP(MeshNode):
                     # 3) Compute hop_count as seen *after* this node
                     prev_hops = getattr(packet, "hop_count", 0)
                     curr_hops = prev_hops + 1   # distance from origin including this node
-
+                    
                     # 3b) If beyond my zone, install coarse IERP entry for the origin
                     if curr_hops > self.zone_radius:
                         origin = packet.origTxNodeId
@@ -734,7 +750,7 @@ class MeshNode_ZRP(MeshNode):
                                 "distance", curr_hops,
                                 "ierp_id", packet.ierp_id,
                             )
-
+                    
                     # 4) TTL / hop-limit handling
                     hl = getattr(packet, "hopLimit", None)
                     if hl is not None:
@@ -747,7 +763,7 @@ class MeshNode_ZRP(MeshNode):
                             )
                             continue
                         hl -= 1
-
+                    
                     # 5) Route towards this packet.destId using my IARP
                     route = self.iarp_table.get(packet.destId)
                     if route is None or route.distance > self.zone_radius:
@@ -758,7 +774,7 @@ class MeshNode_ZRP(MeshNode):
                             "→ dropping.",
                         )
                         continue
-
+                    
                     # 6) Forward as IERP again (NOT DATA)
                     fwd = MeshPacket_ZRP(
                         self.conf,
