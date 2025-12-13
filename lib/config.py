@@ -41,7 +41,7 @@ class Config:
         self.MODEM = 4  # LoRa modem to use: 0 = ShortFast, 1 = Short Slow, ... 7 = Very Long Slow (default 4 is LongFast)
         self.PERIOD = 100 * self.ONE_SECOND_INTERVAL  # mean period of generating a new message with exponential distribution in ms
         self.PACKETLENGTH = 40  # payload in bytes
-        self.SIMTIME = 30 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
+        self.SIMTIME = 90 * self.ONE_MIN_INTERVAL  # duration of one simulation in ms
         self.INTERFERENCE_LEVEL = 0.05  # chance that at a given moment there is already a LoRa packet being sent on your channel, outside of the Meshtastic traffic. Given in a ratio from 0 to 1.
         self.COLLISION_DUE_TO_INTERFERENCE = False
         self.DMs = True  # Set True for sending DMs (with random destination), False for broadcasts
@@ -90,7 +90,7 @@ class Config:
         ############################
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
-        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.MANAGED_FLOOD
+        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.AODV
 
         ############################
         #### ZRP CONFIGURATION #####

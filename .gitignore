@@ -54,3 +54,4 @@ broadcast_packets_R.csv
 output.txt
 output/
 batch_results_*
+results*.csv

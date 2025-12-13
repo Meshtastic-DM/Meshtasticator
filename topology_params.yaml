@@ -2,22 +2,22 @@
 # Use this file with: python generate_topology.py --input-params topology_params.yaml
 
 # Node counts
-dm: 11          # Number of Decision Maker nodes
+dm: 11          # Number of Direct Message nodes
 sensor: 11      # Number of Sensor nodes
 router: 2       # Number of Router nodes
 
 # Coordinate bounds (meters)
-x_low: -2500
-x_high: 2500
-y_low: -2500
-y_high: 2500
+x_low: -3500
+x_high: 3500
+y_low: -3500
+y_high: 3500
 
 # Z coordinates (elevation)
 z_default: 1.0   # For DM and Sensor nodes
 router_z: 2.0    # For Router nodes (elevated)
 
 # Node placement
-min_distance: 50.0   # Minimum distance between nodes (meters)
+min_distance: 600.0   # Minimum distance between nodes (meters)
 max_distance: null   # Maximum distance from Control Center (0,0) in meters
                      # Set to null for no limit, or a number like 1500 to constrain area
 
