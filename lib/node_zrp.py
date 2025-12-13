@@ -453,6 +453,23 @@ class MeshNode_ZRP(MeshNode):
 
 
     def handle_ierp_rreq(self, packet: MeshPacket_ZRP):
+
+        # ===================== DEBUG: IERP RREQ RECV =====================
+        self.verboseprint(
+            "[IERP RREQ RECV]",
+            "time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "| origSrc", packet.origTxNodeId,
+            "| txNode", packet.txNodeId,
+            "| destId", packet.destId,
+            "| queryDest", getattr(packet, "ierp_destId", None),
+            "| ierp_id", getattr(packet, "ierp_id", None),
+            "| hop_count", getattr(packet, "hop_count", None),
+            "| hopLimit", getattr(packet, "hopLimit", None),
+            "| next_hop", getattr(packet, "next_hop", None),
+            "| covered:", getattr(packet, "covered_nodes", []) or [],
+        )
+    # ================================================================
         if packet.packet_type != "IERP" or packet.ierp_type != "RREQ":
             return
 
@@ -483,6 +500,13 @@ class MeshNode_ZRP(MeshNode):
                 )
                 return
 
+        self.verboseprint(
+            "[IERP RREQ POST-HOP]",
+            "node", self.nodeid,
+            "| hop_count", packet.hop_count,
+            "| hopLimit", packet.hopLimit,
+        )
+
         # Optional global bound to prevent crazy expansion
         if packet.hop_count > 7:
             self.verboseprint(
@@ -496,9 +520,20 @@ class MeshNode_ZRP(MeshNode):
         # -------------------------------
         # Grow covered_nodes at this node
         # -------------------------------
-        covered = set(getattr(packet, "covered_nodes", []) or [])
-        covered |= self.get_intrazone_nodes_set()   # add my intrazone nodes
+        # Nodes already covered by the packet so far
+        packet_covered = set(getattr(packet, "covered_nodes", []) or [])
+
+        # Nodes covered after adding THIS node’s intrazone
+        covered = packet_covered | self.get_intrazone_nodes_set()
         packet.covered_nodes = list(covered)
+
+        self.verboseprint(
+            "[IERP COVERED UPDATE]",
+            "node", self.nodeid,
+            "| covered_sz", len(packet_covered),
+            "| covered_nodes", packet_covered,
+        )
+
 
         # -------------------------------
         # Check termination cases
@@ -556,6 +591,7 @@ class MeshNode_ZRP(MeshNode):
         # -------------------------------
         # Bordercast further to peripherals not in covered_nodes
         # -------------------------------
+        print('hiiii')
         peripherals = self.get_peripheral_neighbors()
         if not peripherals:
             self.verboseprint(
@@ -565,14 +601,29 @@ class MeshNode_ZRP(MeshNode):
             )
             return
 
+        print(peripherals)
         for entry in peripherals:
             # avoid immediate backtracking through same nextHop
             if entry.nextHop == packet.txNodeId:
+                self.verboseprint(
+                    "[IERP SKIP]",
+                    "node", self.nodeid,
+                    "| reason=backtracking",
+                    "| peripheral", entry.destId,
+                )
                 continue
 
             # skip peripherals that are already covered
-            if entry.destId in covered:
+            if entry.destId in packet_covered:
+                self.verboseprint(
+                    "[IERP SKIP]",
+                    "node", self.nodeid,
+                    "| reason=already-covered",
+                    "| peripheral", entry.destId,
+                )
                 continue
+
+
 
             fwd = MeshPacket_ZRP(
                 self.conf,
@@ -592,7 +643,7 @@ class MeshNode_ZRP(MeshNode):
                 iarp_seq_num=None,
                 ierp_type="RREQ",
                 ierp_id=packet.ierp_id,
-                ierp_destId=query_dest,
+                ierp_destId=packet.ierp_destId,
                 hop_count=packet.hop_count,
                 covered_nodes=list(covered),
             )
