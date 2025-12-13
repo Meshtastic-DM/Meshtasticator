@@ -681,10 +681,10 @@ class MeshNode_ZRP(MeshNode):
                 "[IERP RREP SEND PROXY]",
                 "time", round(self.env.now, 3),
                 "node", self.nodeid,
-                "| origin", origin,
+                "| RREQ_origin", origin,
                 "| query_dest", query_dest,
                 "| proxy_nextHop_to_query", iarp_entry.nextHop,
-                "| next_hop_to_origin", nh,
+                "| next_hop_to_RREQ_sender", nh,
             )
 
             self.packets.append(rrep)
@@ -774,24 +774,169 @@ class MeshNode_ZRP(MeshNode):
         if packet.packet_type != "IERP" or packet.ierp_type != "RREP":
             return
 
+        rrep_target = packet.destId                 # final node that must receive this RREP (RREQ source)
+        rrep_route_dest = getattr(packet, "ierp_destId", None)  # destination that this RREP is replying about
+
+        # ---------------- DEBUG ----------------
+        self.verboseprint(
+            "[IERP RREP RECV]",
+            "time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "| rrep_target", rrep_target,
+            "| rrep_route_dest", rrep_route_dest,
+            "| ierp_id", getattr(packet, "ierp_id", None),
+            "| origTxNodeId", getattr(packet, "origTxNodeId", None),
+            "| txNode", packet.txNodeId,
+            "| hop_count", getattr(packet, "hop_count", None),
+            "| hopLimit", getattr(packet, "hopLimit", None),
+            "| next_hop", getattr(packet, "next_hop", None),
+        )
+
         key = (packet.origTxNodeId, packet.ierp_id)
         if key in self.processed_ierp_rrep:
-            self.verboseprint("ZRP: duplicate IERP RREP dropped", key)
+            self.verboseprint("[IERP RREP DROP] duplicate", key)
             return
         self.processed_ierp_rrep.add(key)
 
-        self.verboseprint(
-            "At time", round(self.env.now, 3),
-            "node", self.nodeid,
-            "received IERP RREP", packet.ierp_id,
-            "from", packet.txNodeId,
-            "for dest", packet.ierp_destId,
-            "→ TODO: install route + forward / flush pending_ierp.",
+        if rrep_route_dest is None:
+            self.verboseprint("[IERP RREP DROP] missing ierp_destId")
+            return
+
+        # ==========================================================
+        # 1) Install forward route to rrep_route_dest (only outside zone)
+        #    nextHop is the neighbor that sent this RREP to me (txNodeId)
+        # ==========================================================
+        hc = getattr(packet, "hop_count", 0) or 0
+        if hc > self.zone_radius:
+            existing = self.ierp_table.get(rrep_route_dest, None)
+            if existing is None or packet.ierp_id > existing.seq_num:
+                self.ierp_table[rrep_route_dest] = IARPEntry(
+                    destId=rrep_route_dest,
+                    nextHop=packet.txNodeId,
+                    distance=hc,
+                    seq_num=packet.ierp_id,
+                    last_updated=self.env.now,
+                )
+                self.verboseprint(
+                    "[IERP INSTALL]",
+                    "node", self.nodeid,
+                    "| dest", rrep_route_dest,
+                    "| nextHop", packet.txNodeId,
+                    "| distance", hc,
+                    "| ierp_id", packet.ierp_id,
+                )
+
+        # ==========================================================
+        # 2) If I'm the RREP final target (RREQ source): flush pending
+        # ==========================================================
+        if self.nodeid == rrep_target:
+            pending = self.pending_ierp.pop(rrep_route_dest, [])
+            self.verboseprint(
+                "[IERP RREP AT TARGET]",
+                "node", self.nodeid,
+                "| rrep_route_dest", rrep_route_dest,
+                "| pending_cnt", len(pending),
+            )
+
+            route = self.ierp_table.get(rrep_route_dest, None)
+            if route is None:
+                self.verboseprint(
+                    "[IERP TARGET DROP]",
+                    "node", self.nodeid,
+                    "| reason=no-ierp-route",
+                    "| rrep_route_dest", rrep_route_dest,
+                )
+                return
+
+            for p in pending:
+                p.next_hop = route.nextHop
+                if getattr(p, "hopLimit", None) is None:
+                    p.hopLimit = getattr(self.conf, "ZRP_IERP_MAX_TTL", getattr(self, "hopLimit", 3))
+
+                self.verboseprint(
+                    "[IERP SEND PENDING]",
+                    "node", self.nodeid,
+                    "| pkt_seq", getattr(p, "seq", None),
+                    "| to", rrep_route_dest,
+                    "| nextHop", p.next_hop,
+                    "| hopLimit", getattr(p, "hopLimit", None),
+                )
+                self.packets.append(p)
+                self.env.process(self.transmit(p))
+            return
+
+        # ==========================================================
+        # 3) Forward RREP hop-by-hop towards rrep_target
+        #    rule: check IERP table first, then IARP
+        # ==========================================================
+        nh = None
+        e = self.ierp_table.get(rrep_target, None)
+        if e is not None:
+            nh = e.nextHop
+        else:
+            a = self.iarp_table.get(rrep_target, None)
+            if a is not None and a.distance <= self.zone_radius:
+                nh = a.nextHop
+
+        if nh is None:
+            self.verboseprint(
+                "[IERP RREP DROP]",
+                "node", self.nodeid,
+                "| reason=no-route-to-rrep_target",
+                "| rrep_target", rrep_target,
+            )
+            return
+
+        # hopLimit decrement once per forward
+        hl = getattr(packet, "hopLimit", None)
+        if hl is not None:
+            if hl <= 0:
+                self.verboseprint(
+                    "[IERP RREP DROP]",
+                    "node", self.nodeid,
+                    "| reason=hopLimit<=0",
+                    "| rrep_target", rrep_target,
+                )
+                return
+            hl -= 1
+
+        fwd = MeshPacket_ZRP(
+            self.conf,
+            self.nodes,
+            origTxNodeId=packet.origTxNodeId,
+            destId=rrep_target,
+            txNodeId=self.nodeid,
+            packetLen=packet.packetLen,
+            seq=packet.seq,
+            genTime=packet.genTime,
+            wantAck=False,
+            isAck=False,
+            requestId=None,
+            txTime=self.env.now,
+            verboseprint=self.verboseprint,
+            packet_type="IERP",
+            iarp_seq_num=None,
+            ierp_type="RREP",
+            ierp_id=packet.ierp_id,
+            ierp_destId=rrep_route_dest,
+            hop_count=hc,
         )
-        # TODO:
-        # - install self.ierp_table[packet.ierp_destId]
-        # - if self.nodeid == original source → send pending_ierp[destId]
-        # - else forward RREP towards origTxNodeId
+        fwd.hopLimit = hl
+        fwd.next_hop = nh
+
+        self.verboseprint(
+            "[IERP RREP FWD]",
+            "time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "| rrep_target", rrep_target,
+            "| rrep_route_dest", rrep_route_dest,
+            "| nextHop", nh,
+            "| hop_count", fwd.hop_count,
+            "| hopLimit", fwd.hopLimit,
+        )
+
+        self.packets.append(fwd)
+        self.env.process(self.transmit(fwd))
 
 
 
