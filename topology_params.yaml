@@ -7,10 +7,10 @@ sensor: 11      # Number of Sensor nodes
 router: 2       # Number of Router nodes
 
 # Coordinate bounds (meters)
-x_low: -1500
-x_high: 1500
-y_low: -1500
-y_high: 1500
+x_low: -2500
+x_high: 2500
+y_low: -2500
+y_high: 2500
 
 # Z coordinates (elevation)
 z_default: 1.0   # For DM and Sensor nodes

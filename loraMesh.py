@@ -640,6 +640,39 @@ with open(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb
     pickle.dump(plt.gcf(), f)
 plt.close()
 
+energyConsumedPerNode = {}
+for n in nodes:
+	energyConsumedPerNode[n.nodeid] = n.totalEnergyConsumedJ
+
+# Convert to array for plotting
+energyArray = np.array([energyConsumedPerNode.get(i, np.nan) for i in range(N)])
+
+# Plot energy consumption
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(energyArray)), energyArray, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(energyArray):
+	if not np.isnan(val):
+		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Node ID")
+plt.ylabel("Energy Consumed (J)")
+plt.title("Energy Consumption per Node")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.savefig(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+	pickle.dump(plt.gcf(), f)
+plt.close()
+
+# Save energy consumption to CSV
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.csv", mode="w", newline="") as f:
+	writer = csv.writer(f)
+	writer.writerow(["node_id", "energy_consumed_J"])
+	for node_id, energy in sorted(energyConsumedPerNode.items()):
+		writer.writerow([node_id, f"{energy:.4f}"])
+
+
+
 def save_nested_dict_to_csv(data, filename):
     """
     Save a nested dictionary of the form:
