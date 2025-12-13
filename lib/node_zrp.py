@@ -376,6 +376,22 @@ class MeshNode_ZRP(MeshNode):
             }
         return info
 
+    def get_next_hop_to(self, target_id: int):
+        """
+        Prefer inter-zone (IERP) routing if available, else intra-zone (IARP).
+        Returns nextHop or None.
+        """
+        e = self.ierp_table.get(target_id)
+        if e is not None:
+            return e.nextHop
+
+        e = self.iarp_table.get(target_id)
+        if e is not None and e.distance <= self.zone_radius:
+            return e.nextHop
+
+        return None
+
+
 
     # =====================================================================
     # IERP / BRP and other ZRP parts – to be implemented later
@@ -535,32 +551,6 @@ class MeshNode_ZRP(MeshNode):
         )
 
 
-        # -------------------------------
-        # Check termination cases
-        # -------------------------------
-        # If I am the query destination, you'd generate RREP here
-        if self.nodeid == query_dest:
-            self.verboseprint(
-                "At time", round(self.env.now, 3),
-                "node", self.nodeid,
-                "is query dest", query_dest,
-                "→ would send IERP RREP (not yet implemented).",
-            )
-            # TODO: send IERP RREP back towards packet.origTxNodeId
-            return
-
-        # If IARP has route to query_dest, I can act as proxy responder
-        iarp_entry = self.iarp_table.get(query_dest)
-        if iarp_entry and iarp_entry.distance <= self.zone_radius:
-            self.verboseprint(
-                "At time", round(self.env.now, 3),
-                "node", self.nodeid,
-                "has IARP route to query dest", query_dest,
-                "→ would send IERP RREP (not yet implemented).",
-            )
-            # TODO: send IERP RREP based on IARP route
-            return
-
         # Store coarse inter-zone info about the origin once RREQ has gone
         # beyond my intrazone radius (i.e., inter-zone information).
         if packet.hop_count > self.zone_radius:
@@ -587,6 +577,122 @@ class MeshNode_ZRP(MeshNode):
                     "ierp_id", packet.ierp_id,
                 )
 
+
+        # -------------------------------
+        # Check termination cases
+        # -------------------------------
+        # If I am the query destination, you'd generate RREP here
+        if self.nodeid == query_dest:
+            origin = packet.origTxNodeId
+            nh = self.get_next_hop_to(origin)
+
+            if nh is None:
+                self.verboseprint(
+                    "[IERP RREP DROP]",
+                    "node", self.nodeid,
+                    "| reason=no-route-to-origin",
+                    "| origin", origin,
+                )
+                return
+
+            rrep = MeshPacket_ZRP(
+                self.conf,
+                self.nodes,
+                origTxNodeId=self.nodeid,          # keep origin consistent
+                destId=origin,                # RREP destId = origin of RREQ (your rule)
+                txNodeId=self.nodeid,
+                packetLen=0,                  # control packet
+                seq=packet.ierp_id,           # control id
+                genTime=self.env.now,
+                wantAck=False,
+                isAck=False,
+                requestId=None,
+                txTime=self.env.now,
+                verboseprint=self.verboseprint,
+                packet_type="IERP",
+                iarp_seq_num=None,
+                ierp_type="RREP",
+                ierp_id=packet.ierp_id,
+                ierp_destId=query_dest,       # the actual discovered destination
+                hop_count=0,
+            )
+            rrep.hopLimit = getattr(packet, "hopLimit", None)
+            rrep.next_hop = nh
+
+            self.verboseprint(
+                "[IERP RREP SEND]",
+                "time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "| origin", origin,
+                "| dest(query)", query_dest,
+                "| ierp_id", packet.ierp_id,
+                "| next_hop", nh,
+            )
+
+            self.packets.append(rrep)
+            self.env.process(self.transmit(rrep))
+            return
+
+
+        # If IARP has route to query_dest, I can act as proxy responder
+        iarp_entry = self.iarp_table.get(query_dest)
+        if iarp_entry and iarp_entry.distance <= self.zone_radius:
+            origin = packet.origTxNodeId
+            nh = self.get_next_hop_to(origin)
+
+            if nh is None:
+                self.verboseprint(
+                    "[IERP RREP DROP]",
+                    "node", self.nodeid,
+                    "| reason=no-route-to-origin",
+                    "| origin", origin,
+                    "| proxy_for", query_dest,
+                )
+                return
+
+            rrep = MeshPacket_ZRP(
+                self.conf,
+                self.nodes,
+                origTxNodeId=packet.ierp_destId,
+                destId=origin,                # RREP still goes back to origin
+                txNodeId=self.nodeid,
+                packetLen=0,
+                seq=packet.ierp_id,
+                genTime=self.env.now,
+                wantAck=False,
+                isAck=False,
+                requestId=None,
+                txTime=self.env.now,
+                verboseprint=self.verboseprint,
+                packet_type="IERP",
+                iarp_seq_num=None,
+                ierp_type="RREP",
+                ierp_id=packet.ierp_id,
+                ierp_destId=query_dest,       # discovered via proxy (in-zone knowledge)
+                hop_count=iarp_entry.distance,
+            )
+            rrep.hopLimit = getattr(packet, "hop_count", None)
+            rrep.next_hop = nh
+
+            # Optional: record that this was a proxy answer (pure logging)
+            rrep.is_proxy = True
+
+            self.verboseprint(
+                "[IERP RREP SEND PROXY]",
+                "time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "| origin", origin,
+                "| query_dest", query_dest,
+                "| proxy_nextHop_to_query", iarp_entry.nextHop,
+                "| next_hop_to_origin", nh,
+            )
+
+            self.packets.append(rrep)
+            self.env.process(self.transmit(rrep))
+            return
+
+
+        
 
         # -------------------------------
         # Bordercast further to peripherals not in covered_nodes
