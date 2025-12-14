@@ -211,14 +211,6 @@ class MeshNode_ZRP(MeshNode):
             pNew.hopLimit = min(default_hl, self.zone_radius)
 
 
-            self.verboseprint(
-                "At time", round(self.env.now, 3),
-                "node", self.nodeid,
-                "sending ZRP unicast packet", pNew.seq,
-                "to", destId,
-                "via nextHop", entry.nextHop,
-                "(distance", entry.distance, ")",
-            )
 
             self.verboseprint(
                 "[DATA SEND IARP]",
@@ -243,14 +235,6 @@ class MeshNode_ZRP(MeshNode):
             default_hl = getattr(self, "hopLimit", 3)
             pNew.hopLimit = getattr(pNew, "hopLimit", default_hl)
 
-            self.verboseprint(
-                "At time", round(self.env.now, 3),
-                "node", self.nodeid,
-                "sending ZRP unicast packet", pNew.seq,
-                "to", destId,
-                "via IERP nextHop", ierp_entry.nextHop,
-                "(distance", ierp_entry.distance, ")",
-            )
 
             self.verboseprint(
                 "[DATA SEND IERP]",
