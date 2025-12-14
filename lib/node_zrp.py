@@ -1068,15 +1068,34 @@ class MeshNode_ZRP(MeshNode):
                         hl -= 1
                     
                     # 5) Route towards this packet.destId using my IARP
-                    route = self.iarp_table.get(packet.destId)
-                    if route is None or route.distance > self.zone_radius:
+                    nh = None
+
+                    if packet.ierp_type == "RREQ":
+                        # RREQ transit forwarding: IARP only (bordercast is zone-based)
+                        route = self.iarp_table.get(packet.destId)
+                        if route is not None and route.distance <= self.zone_radius:
+                            nh = route.nextHop
+
+                    elif packet.ierp_type == "RREP":
+                        # RREP transit forwarding: IERP first, then IARP
+                        e = self.ierp_table.get(packet.destId)
+                        if e is not None:
+                            nh = e.nextHop
+                        else:
+                            a = self.iarp_table.get(packet.destId)
+                            if a is not None and a.distance <= self.zone_radius:
+                                nh = a.nextHop
+
+                    if nh is None:
                         self.verboseprint(
                             "At time", round(self.env.now, 3),
                             "node", self.nodeid,
-                            "has no IARP route for IERP dest", packet.destId,
-                            "→ dropping.",
+                            "has no route to forward IERP", packet.ierp_type,
+                            "towards", packet.destId,
+                            "→ dropping."
                         )
                         continue
+
                     
                     # 6) Forward as IERP again (NOT DATA)
                     fwd = MeshPacket_ZRP(
@@ -1104,7 +1123,7 @@ class MeshNode_ZRP(MeshNode):
                     fwd.ierp_destId   = getattr(packet, "ierp_destId", None)
                     fwd.covered_nodes = getattr(packet, "covered_nodes", None)
                     fwd.hopLimit      = hl
-                    fwd.next_hop      = route.nextHop
+                    fwd.next_hop      = nh
 
                     self.verboseprint(
                         "At time", round(self.env.now, 3),
