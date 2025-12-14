@@ -807,6 +807,7 @@ class MeshNode_ZRP(MeshNode):
         #    nextHop is the neighbor that sent this RREP to me (txNodeId)
         # ==========================================================
         hc = getattr(packet, "hop_count", 0) or 0
+        hc += 1
         if hc > self.zone_radius:
             existing = self.ierp_table.get(rrep_route_dest, None)
             if existing is None or packet.ierp_id > existing.seq_num:
