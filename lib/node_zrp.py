@@ -1439,15 +1439,26 @@ class MeshNode_ZRP(MeshNode):
                                 continue
                             hl -= 1
 
-                        # Look up next hop from *my* IARP table
-                        route = self.iarp_table.get(packet.destId)
-                        if route is None or route.distance > self.zone_radius:
-                            # No intrazone route → optional fallback: drop or flood
+                        # Look up next hop from *my* IERP then IARP table
+                        nh = None
+
+                        # 1) Try inter-zone route (IERP)
+                        e = self.ierp_table.get(packet.destId)
+                        if e is not None:
+                            nh = e.nextHop
+
+                        # 2) Fallback to intra-zone route (IARP)
+                        else:
+                            a = self.iarp_table.get(packet.destId)
+                            if a is not None and a.distance <= self.zone_radius:
+                                nh = a.nextHop
+
+                        if nh is None:
                             self.verboseprint(
                                 "At time", round(self.env.now, 3),
                                 "node", self.nodeid,
-                                "has no IARP route for dest", packet.destId,
-                                "→ dropping (or you can flood here if you want).",
+                                "has no IERP/IARP route for dest", packet.destId,
+                                "→ dropping."
                             )
                             continue
 
@@ -1472,7 +1483,7 @@ class MeshNode_ZRP(MeshNode):
                             None,
                             getattr(packet, "hop_count", 0) + 1,
                         )
-                        fwd.next_hop = route.nextHop
+                        fwd.next_hop = nh
                         if hl is not None:
                             fwd.hopLimit = hl
 
