@@ -167,6 +167,16 @@ class MeshNode_ZRP(MeshNode):
         base_packet.data = data
         base_packet.is_sdn_update = is_sdn_update
 
+        self.verboseprint(
+            "[DATA CREATE]",
+            "time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "| seq", base_packet.seq,
+            "| dest", destId,
+            "| wantAck", wantAck,
+            "| is_sdn_update", is_sdn_update,
+        )
+
         # =======================
         # Broadcast DATA
         # =======================
@@ -209,9 +219,20 @@ class MeshNode_ZRP(MeshNode):
                 "via nextHop", entry.nextHop,
                 "(distance", entry.distance, ")",
             )
+
+            self.verboseprint(
+                "[DATA SEND IARP]",
+                "node", self.nodeid,
+                "| seq", pNew.seq,
+                "| dest", destId,
+                "| nextHop", entry.nextHop,
+                "| distance", entry.distance,
+            )
+
             self.packets.append(pNew)
             self.env.process(self.transmit(pNew))
             return base_packet
+
 
         # -------- 2) Try inter-zone route (IERP table) --------
         ierp_entry = self.ierp_table.get(destId, None)
@@ -230,17 +251,29 @@ class MeshNode_ZRP(MeshNode):
                 "via IERP nextHop", ierp_entry.nextHop,
                 "(distance", ierp_entry.distance, ")",
             )
+
+            self.verboseprint(
+                "[DATA SEND IERP]",
+                "node", self.nodeid,
+                "| seq", pNew.seq,
+                "| dest", destId,
+                "| nextHop", ierp_entry.nextHop,
+                "| distance", ierp_entry.distance,
+            )
+
             self.packets.append(pNew)
             self.env.process(self.transmit(pNew))
             return base_packet
 
         # -------- 3) No route → trigger IERP RREQ --------
         self.verboseprint(
-            "At time", round(self.env.now, 3),
+            "[DATA QUEUED]",
             "node", self.nodeid,
-            "has no IARP/IERP route to", destId,
-            "→ triggering IERP route discovery.",
+            "| seq", base_packet.seq,
+            "| dest", destId,
+            "| reason=no-route",
         )
+
 
         self.pending_ierp.setdefault(destId, []).append(base_packet)
         self.initiate_route_discovery(destId)
@@ -1211,6 +1244,17 @@ class MeshNode_ZRP(MeshNode):
                 # Data / ACK handling (non-IARP)
                 # ==================================================
                 if packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
+                    if packet.packet_type is None:
+                        self.verboseprint(
+                            "[DATA RECV]",
+                            "time", round(self.env.now, 3),
+                            "node", self.nodeid,
+                            "| seq", packet.seq,
+                            "| from", packet.origTxNodeId,
+                            "| hops", getattr(packet, "hop_count", None),
+                            "| delay", round(self.env.now - packet.genTime, 3),
+                        )
+
                     # ------------ deliver to local app + generate ACK ------------
                     if not packet.isAck and packet.wantAck:
                         self.messageSeq["val"] += 1
@@ -1455,12 +1499,28 @@ class MeshNode_ZRP(MeshNode):
 
                         if nh is None:
                             self.verboseprint(
-                                "At time", round(self.env.now, 3),
+                                "[DATA DROP]",
                                 "node", self.nodeid,
-                                "has no IERP/IARP route for dest", packet.destId,
-                                "→ dropping."
+                                "| seq", packet.seq,
+                                "| dest", packet.destId,
+                                "| reason=no-route",
                             )
+
                             continue
+
+                        route_type = "IERP" if e is not None else "IARP"
+
+                        self.verboseprint(
+                            "[DATA FWD]",
+                            "node", self.nodeid,
+                            "| seq", packet.seq,
+                            "| dest", packet.destId,
+                            "| via", route_type,
+                            "| nextHop", nh,
+                            "| hop_count", getattr(packet, "hop_count", 0) + 1,
+                            "| hopLimit", hl,
+                        )
+
 
                         # Build next hop packet
                         fwd = MeshPacket_ZRP(
