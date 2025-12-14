@@ -44,6 +44,8 @@ class MeshPacket_ZRP(MeshPacket):
         # Common ZRP fields
         hop_count=0,
         covered_nodes=None,        # list of node IDs already covered by this RREQ
+
+        next_hop=None, 
     ):
         # Initialize base MeshPacket (PHY + generic fields)
         super().__init__(
@@ -60,6 +62,7 @@ class MeshPacket_ZRP(MeshPacket):
             requestId,
             txTime,
             verboseprint,
+            
         )
 
         # -----------------------------
@@ -68,6 +71,7 @@ class MeshPacket_ZRP(MeshPacket):
         self.packet_type = packet_type
         self.zone_radius = getattr(conf, "ZRP_ZONE_RADIUS", 2)
         self.hop_count = hop_count
+        self.next_hop = next_hop  # <-- ADD THIS
 
         # -----------------------------
         # IARP Fields
