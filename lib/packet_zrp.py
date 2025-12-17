@@ -29,6 +29,7 @@ class MeshPacket_ZRP(MeshPacket):
         requestId,
         txTime,
         verboseprint,
+        *,
 
         # ZRP packet type
         packet_type=None,          # "IARP", "IERP" or None (DATA)

@@ -1255,23 +1255,22 @@ class MeshNode_ZRP(MeshNode):
                         ack_packet = MeshPacket_ZRP(
                             self.conf,
                             self.nodes,
-                            self.nodeid,             # origTxNodeId
-                            packet.origTxNodeId,     # destId
-                            self.nodeid,             # txNodeId
-                            10,                      # packetLen
-                            messageSeq,
-                            self.env.now,
-                            False,                   # wantAck
-                            True,                    # isAck
-                            packet.seq,              # requestId
-                            self.env.now,
-                            self.verboseprint,
-                            None,                    # packet_type = None (DATA/ACK)
-                            None,                    # iarp_seq_num
-                            None,                    # ierp_type
-                            None,                    # ierp_id
-                            getattr(packet, "hop_count", 0) + 1,
+                            origTxNodeId=self.nodeid,
+                            destId=packet.origTxNodeId,
+                            txNodeId=self.nodeid,
+                            packetLen=10,
+                            seq=messageSeq,
+                            genTime=self.env.now,
+                            wantAck=False,
+                            isAck=True,
+                            requestId=packet.seq,
+                            txTime=self.env.now,
+                            verboseprint=self.verboseprint,
+                            packet_type=None,                           # DATA/ACK
+                            hop_count=getattr(packet, "hop_count", 0) + 1,
+                            next_hop=self.get_next_hop_to(packet.origTxNodeId),  # IMPORTANT for unicast ACK
                         )
+
                         self.packets.append(ack_packet)
                         self.env.process(self.transmit(ack_packet))
                         self.verboseprint(
@@ -1510,26 +1509,24 @@ class MeshNode_ZRP(MeshNode):
                         fwd = MeshPacket_ZRP(
                             self.conf,
                             self.nodes,
-                            packet.origTxNodeId,      # still original source
-                            packet.destId,            # final destination
-                            self.nodeid,              # current transmitter
-                            packet.packetLen,
-                            packet.seq,
-                            packet.genTime,
-                            packet.wantAck,
-                            packet.isAck,
-                            packet.requestId,
-                            self.env.now,
-                            self.verboseprint,
-                            None,                     # DATA
-                            None,
-                            None,
-                            None,
-                            getattr(packet, "hop_count", 0) + 1,
+                            origTxNodeId=packet.origTxNodeId,
+                            destId=packet.destId,
+                            txNodeId=self.nodeid,
+                            packetLen=packet.packetLen,
+                            seq=packet.seq,
+                            genTime=packet.genTime,
+                            wantAck=packet.wantAck,
+                            isAck=packet.isAck,
+                            requestId=packet.requestId,
+                            txTime=self.env.now,
+                            verboseprint=self.verboseprint,
+                            packet_type=None,                           # DATA
+                            hop_count=getattr(packet, "hop_count", 0) + 1,
+                            next_hop=nh,
                         )
-                        fwd.next_hop = nh
                         if hl is not None:
                             fwd.hopLimit = hl
+
 
                         self.packets.append(fwd)
                         self.env.process(self.transmit(fwd))
@@ -1567,25 +1564,23 @@ class MeshNode_ZRP(MeshNode):
                             pNew = MeshPacket_ZRP(
                                 self.conf,
                                 self.nodes,
-                                packet.origTxNodeId,
-                                packet.destId,
-                                self.nodeid,
-                                packet.packetLen,
-                                packet.seq,
-                                packet.genTime,
-                                packet.wantAck,
-                                packet.isAck,
-                                None,
-                                self.env.now,
-                                self.verboseprint,
-                                None,   # DATA broadcast
-                                None,
-                                None,
-                                None,
-                                getattr(packet, "hop_count", 0) + 1,
+                                origTxNodeId=packet.origTxNodeId,
+                                destId=packet.destId,
+                                txNodeId=self.nodeid,
+                                packetLen=packet.packetLen,
+                                seq=packet.seq,
+                                genTime=packet.genTime,
+                                wantAck=packet.wantAck,
+                                isAck=packet.isAck,
+                                requestId=None,
+                                txTime=self.env.now,
+                                verboseprint=self.verboseprint,
+                                packet_type=None,                           # DATA broadcast
+                                hop_count=getattr(packet, "hop_count", 0) + 1,
                             )
                             if hl is not None:
                                 pNew.hopLimit = hl
+
 
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))

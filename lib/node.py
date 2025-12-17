@@ -268,6 +268,10 @@ class MeshNode:
                         elif self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
                             ############ ZRP version ############
                             from lib.packet_zrp import MeshPacket_ZRP
+
+                            # Preserve next_hop if your original packet already had it (important for unicast)
+                            nh = getattr(p, "next_hop", None)
+
                             pNew = MeshPacket_ZRP(
                                 self.conf,
                                 self.nodes,
@@ -282,18 +286,38 @@ class MeshNode:
                                 None,             # requestId
                                 self.env.now,
                                 self.verboseprint,
-                                None,             # packet_type = None → DATA packet (not IARP/IERP)
+
+                                # ---- ZRP fields (keyword args for new structure) ----
+                                packet_type=None,                 # DATA packet
+                                hop_count=getattr(p, "hop_count", 0),
+                                covered_nodes=getattr(p, "covered_nodes", None),
+                                iarp_seq_num=getattr(p, "iarp_seq_num", None),
+                                ierp_type=getattr(p, "ierp_type", None),
+                                ierp_id=getattr(p, "ierp_id", None),
+                                ierp_destId=getattr(p, "ierp_destId", None),
+                                next_hop=nh,
                             )
+
+                            # Keep hopLimit if your base packet had one
+                            if hasattr(p, "hopLimit"):
+                                pNew.hopLimit = p.hopLimit
+
+                            # Preserve payload flags if you use them elsewhere
+                            pNew.data = getattr(p, "data", None)
+                            pNew.is_sdn_update = getattr(p, "is_sdn_update", False)
+
                             pNew.retransmissions = minRetransmissions - 1
                             self.verboseprint(
                                 round(self.env.now, 3),
                                 'Node', self.nodeid,
                                 'wants to retransmit its generated packet to', destId,
                                 'with seq.nr.', p.seq,
-                                'minRetransmissions', minRetransmissions
+                                'minRetransmissions', minRetransmissions,
+                                '| next_hop', getattr(pNew, "next_hop", None)
                             )
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
+
                         else:
                             pNew = MeshPacket(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint)
                             pNew.retransmissions = minRetransmissions - 1
