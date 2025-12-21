@@ -1466,43 +1466,66 @@ class MeshNode_ZRP(MeshNode):
                                 continue
                             hl -= 1
 
-                        # Look up next hop from *my* IERP then IARP table
+                        # ---------------- Look up next hop (IERP then IARP) ----------------
+                        e = self.ierp_table.get(packet.destId, None)
+                        a = None
                         nh = None
 
-                        # 1) Try inter-zone route (IERP)
-                        e = self.ierp_table.get(packet.destId)
                         if e is not None:
                             nh = e.nextHop
-
-                        # 2) Fallback to intra-zone route (IARP)
                         else:
-                            a = self.iarp_table.get(packet.destId)
+                            a = self.iarp_table.get(packet.destId, None)
                             if a is not None and a.distance <= self.zone_radius:
                                 nh = a.nextHop
 
+                        # Decide route_type safely (can be None)
+                        route_type = None
+                        if e is not None:
+                            route_type = "IERP"
+                        elif a is not None and a.distance <= self.zone_radius:
+                            route_type = "IARP"
+
+                        # ---------------- Better logging ----------------
                         if nh is None:
                             self.verboseprint(
                                 "[DATA DROP]",
+                                "time", round(self.env.now, 3),
                                 "node", self.nodeid,
                                 "| seq", packet.seq,
+                                "| orig", getattr(packet, "origTxNodeId", None),
+                                "| txNodeId", getattr(packet, "txNodeId", None),
                                 "| dest", packet.destId,
+                                "| pkt_next_hop", getattr(packet, "next_hop", None),
+                                "| hop_count", getattr(packet, "hop_count", None),
+                                "| hopLimit", hl,
                                 "| reason=no-route",
+                                "| ierp_hit", (e is not None),
+                                "| iarp_hit", (a is not None),
+                                "| iarp_dist", (getattr(a, "distance", None) if a is not None else None),
                             )
-
                             continue
-
-                        route_type = "IERP" if e is not None else "IARP"
 
                         self.verboseprint(
                             "[DATA FWD]",
+                            "time", round(self.env.now, 3),
                             "node", self.nodeid,
                             "| seq", packet.seq,
+                            "| orig", getattr(packet, "origTxNodeId", None),
+                            "| rx_from_txNodeId", getattr(packet, "txNodeId", None),  # who sent it to me
                             "| dest", packet.destId,
-                            "| via", route_type,
-                            "| nextHop", nh,
-                            "| hop_count", getattr(packet, "hop_count", 0) + 1,
-                            "| hopLimit", hl,
+                            "| via", route_type,                # can be "IERP"/"IARP"/None (but nh != None implies usually not None)
+                            "| nextHop", nh,                    # who I will send to next
+                            "| pkt_next_hop", getattr(packet, "next_hop", None),  # what the packet requested (if any)
+                            "| hop_count_in", getattr(packet, "hop_count", None),
+                            "| hop_count_out", getattr(packet, "hop_count", 0) + 1,
+                            "| hopLimit_in", getattr(packet, "hopLimit", None),
+                            "| hopLimit_out", hl,
+                            "| ierp_nextHop", (e.nextHop if e is not None else None),
+                            "| ierp_dist", (e.distance if e is not None else None),
+                            "| iarp_nextHop", (a.nextHop if a is not None else None),
+                            "| iarp_dist", (a.distance if a is not None else None),
                         )
+
 
 
                         # Build next hop packet
