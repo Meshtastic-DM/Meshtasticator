@@ -32,7 +32,7 @@ class MeshNode_AODV(MeshNode):
         p.is_sdn_update = is_sdn_update
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId,'is_sdn_update:',is_sdn_update)
         if destId != NODENUM_BROADCAST:
-            if destId in self.routing_table and self.routing_table[destId].valid:
+            if destId in self.routing_table and self.routing_table[destId].valid and self.routing_table[destId].lifeTime > self.env.now:
                 pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
                 pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
@@ -254,6 +254,7 @@ class MeshNode_AODV(MeshNode):
                 if not self.isTransmitting:
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'started receiving packet', packet.seq, 'from', packet.txNodeId)
                     packet.onAirToN[self.nodeid] = False
+                    self.totalEnergyConsumedJ += (self.conf.Rx_Powr * (packet.timeOnAir / 1000.0))  # Power (W) * time (s) = energy (J)  
                     self.isReceiving.append(True)
                 else:  # if you were currently transmitting, you could not have sensed it
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'was transmitting, so could not receive packet', packet.seq)
@@ -370,10 +371,11 @@ class MeshNode_AODV(MeshNode):
                     #         self.env.process(self.transmit(pNew))
                     #         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted broadcast packet', pNew.seq)
                 else:
-                    if packet.hopLimit > 0:
+                    if packet.hopLimit >= 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
-                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq)
-                            next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId else None
+                            next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId != NODENUM_BROADCAST else None
+                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq, 'next hop', next_hop)
+                            
                             pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
                             pNew.hopLimit = packet.hopLimit - 1
                             pNew.next_hop = next_hop
@@ -427,7 +429,7 @@ class MeshNode_AODV(MeshNode):
             }
         return route_info
     
-    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 300000):
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 4000000):
         self.routing_table[destId] = RouteEntry(
             destId=destId,
             nextHop=nextHop,
