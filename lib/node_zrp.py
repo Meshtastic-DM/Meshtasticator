@@ -74,7 +74,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 2 * 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1* 60 * 1000)
 
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
@@ -153,7 +153,7 @@ class MeshNode_ZRP(MeshNode):
             packetLen=plen,
             seq=messageSeq,
             genTime=self.env.now,
-            wantAck=wantAck,
+            wantAck=False,
             isAck=False,
             requestId=None,
             txTime=self.env.now,
@@ -655,7 +655,7 @@ class MeshNode_ZRP(MeshNode):
         iarp_entry = self.iarp_table.get(query_dest)
         if iarp_entry and iarp_entry.distance <= self.zone_radius:
             origin = packet.origTxNodeId
-            nh = self.get_next_hop_to(origin)
+            nh = packet.txNodeId  # send back to previous hop
 
             if nh is None:
                 self.verboseprint(
