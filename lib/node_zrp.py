@@ -74,7 +74,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1* 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1 * 60 * 1000)
 
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
@@ -173,7 +173,7 @@ class MeshNode_ZRP(MeshNode):
             "node", self.nodeid,
             "| seq", base_packet.seq,
             "| dest", destId,
-            "| wantAck", wantAck,
+            "| wantAck", base_packet.wantAck,
             "| is_sdn_update", is_sdn_update,
         )
 
@@ -426,12 +426,37 @@ class MeshNode_ZRP(MeshNode):
             * At origin: all nodes in my intrazone set (including myself).
         """
         peripherals = self.get_peripheral_neighbors()
+
         if not peripherals:
             self.verboseprint(
                 "At time", round(self.env.now, 3),
                 "node", self.nodeid,
                 "has no peripheral neighbors for IERP; discovery aborted.",
+                "| zone_radius", self.zone_radius,
+                "| iarp_size", len(self.iarp_table),
             )
+
+            # -------- DEBUG: dump IARP table --------
+            if len(self.iarp_table) > 0:
+                self.verboseprint(
+                    "[IARP TABLE DUMP]",
+                    "node", self.nodeid,
+                )
+                for dest, entry in self.iarp_table.items():
+                    self.verboseprint(
+                        "  dest", dest,
+                        "| nextHop", entry.nextHop,
+                        "| distance", entry.distance,
+                        "| seq", entry.seq_num,
+                        "| last_updated", round(entry.last_updated, 3),
+                    )
+            else:
+                self.verboseprint(
+                    "[IARP TABLE EMPTY]",
+                    "node", self.nodeid,
+                )
+            # ----------------------------------------
+
             return
 
         self.ierp_seq_num += 1
@@ -714,7 +739,6 @@ class MeshNode_ZRP(MeshNode):
         # -------------------------------
         # Bordercast further to peripherals not in covered_nodes
         # -------------------------------
-        print('hiiii')
         peripherals = self.get_peripheral_neighbors()
         if not peripherals:
             self.verboseprint(
