@@ -1048,6 +1048,15 @@ class MeshNode_ZRP(MeshNode):
             )
             self.packets.append(fwd)
             self.env.process(self.transmit(fwd))
+    
+
+    def paced_send_pending(self, p, delay_msec: float):
+        yield self.env.timeout(delay_msec)
+
+        self.packets.append(p)
+        self.env.process(self.transmit(p))
+        self.env.process(self.zrp_reliable_retransmit(p))
+
 
 
     def handle_ierp_rrep(self, packet: MeshPacket_ZRP):
@@ -1139,23 +1148,31 @@ class MeshNode_ZRP(MeshNode):
                 )
                 return
 
-            for p in pending:
+            BASE_DELAY = getattr(self.conf, "ZRP_PENDING_FLUSH_DELAY_MSEC", 100)  # tune
+            JITTER     = getattr(self.conf, "ZRP_PENDING_FLUSH_JITTER_MSEC", 40)
+
+            for i, p in enumerate(pending):
                 p.next_hop = route.nextHop
                 if getattr(p, "hopLimit", None) is None:
-                    p.hopLimit = getattr(self.conf, "ZRP_IERP_MAX_TTL", getattr(self, "hopLimit", 3))
+                    p.hopLimit = getattr(self, "hopLimit", 3)
+
+                p.retransmissions = self.conf.maxRetransmission
+
+                delay = i * BASE_DELAY + random.uniform(0, JITTER)
 
                 self.verboseprint(
-                    "[IERP SEND PENDING]",
+                    "[IERP SEND PENDING PACED]",
+                    "time", round(self.env.now, 3),
                     "node", self.nodeid,
                     "| pkt_seq", getattr(p, "seq", None),
                     "| to", rrep_route_dest,
                     "| nextHop", p.next_hop,
                     "| hopLimit", getattr(p, "hopLimit", None),
+                    "| delay", round(delay, 3),
                 )
-                p.retransmissions = self.conf.maxRetransmission
-                self.packets.append(p)
-                self.env.process(self.transmit(p))
-                self.env.process(self.zrp_reliable_retransmit(p))
+
+                self.env.process(self.paced_send_pending(p, delay))
+
 
             return
 
