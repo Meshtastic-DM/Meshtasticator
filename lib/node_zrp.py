@@ -1148,8 +1148,8 @@ class MeshNode_ZRP(MeshNode):
                 )
                 return
 
-            BASE_DELAY = getattr(self.conf, "ZRP_PENDING_FLUSH_DELAY_MSEC", 100)  # tune
-            JITTER     = getattr(self.conf, "ZRP_PENDING_FLUSH_JITTER_MSEC", 40)
+            BASE_DELAY = getattr(self.conf, "ZRP_PENDING_FLUSH_DELAY_MSEC", 1000)  # tune
+            JITTER     = getattr(self.conf, "ZRP_PENDING_FLUSH_JITTER_MSEC", 200)
 
             for i, p in enumerate(pending):
                 p.next_hop = route.nextHop
