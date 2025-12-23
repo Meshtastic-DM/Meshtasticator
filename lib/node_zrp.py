@@ -79,6 +79,13 @@ class MeshNode_ZRP(MeshNode):
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
 
+
+        # destId -> state for retrying IERP when peripherals become available/refresh
+        self.ierp_waiting = {}  # { destId: {"tries": int, "last_kick_seq": int|None} }
+
+        self.IERP_MAX_RETRIES = getattr(self.conf, "ZRP_IERP_MAX_RETRIES", 3)
+
+
         # For IARP duplicate suppression
         self.seen_iarp = set()  # (origTxNodeId, iarp_seq_num)
 
@@ -324,21 +331,65 @@ class MeshNode_ZRP(MeshNode):
             self.packets.append(p)
             self.env.process(self.transmit(p))
 
+    def retry_ierp_waiting(self, trigger_seq=None):
+        # only if we actually have peripherals now
+        if not self.get_peripheral_neighbors():
+            return
+
+        for destId in list(self.ierp_waiting.keys()):
+            # if route already exists or no pending data, stop tracking
+            if destId in self.ierp_table or destId not in self.pending_ierp:
+                self.ierp_waiting.pop(destId, None)
+                continue
+
+            st = self.ierp_waiting[destId]
+
+            # prevent repeated kicks for same IARP update wave (optional)
+            if trigger_seq is not None and st["last_kick_seq"] == trigger_seq:
+                continue
+
+            if st["tries"] >= self.IERP_MAX_RETRIES:
+                self.verboseprint(
+                    "[IERP GIVEUP]",
+                    "time", round(self.env.now, 3),
+                    "node", self.nodeid,
+                    "| dest", destId,
+                    "| tries", st["tries"]
+                )
+                # discard pending data too (your requirement)
+                self.pending_ierp.pop(destId, None)
+                self.ierp_waiting.pop(destId, None)
+                continue
+
+            st["tries"] += 1
+            st["last_kick_seq"] = trigger_seq
+
+            self.verboseprint(
+                "[IERP RETRY]",
+                "time", round(self.env.now, 3),
+                "node", self.nodeid,
+                "| dest", destId,
+                "| try", st["tries"],
+                "| trigger_seq", trigger_seq
+            )
+
+            self.initiate_route_discovery(destId)
+
     def handle_iarp(self, packet: MeshPacket_ZRP):
         if not isinstance(packet, MeshPacket_ZRP) or packet.packet_type != "IARP":
-            return
+            return (False, None)
 
         src = packet.origTxNodeId
 
         # Do not install routes to yourself
         if src == self.nodeid:
-            return
+            return (False, None)
 
         # ----- duplicate suppression -----
         key = (src, packet.iarp_seq_num)
         if key in self.seen_iarp:
             # already processed this IARP from this origin + seq
-            return
+            return (False, None)
         self.seen_iarp.add(key)
         # ---------------------------------
 
@@ -349,11 +400,23 @@ class MeshNode_ZRP(MeshNode):
 
         existing = self.iarp_table.get(src, None)
 
+        peripheral_event = False
+
         if (
             existing is None
             or seq_num > existing.seq_num
             or (seq_num == existing.seq_num and distance < existing.distance)
         ):
+
+            # detect peripheral-related event:
+            #  - new entry that is peripheral
+            #  - existing peripheral entry gets newer seq
+            if distance == self.zone_radius:
+                if existing is None:
+                    peripheral_event = True
+                elif seq_num > existing.seq_num and existing.distance == self.zone_radius:
+                    peripheral_event = True
+
             self.iarp_table[src] = IARPEntry(
                 destId=src,
                 nextHop=packet.txNodeId,
@@ -369,7 +432,7 @@ class MeshNode_ZRP(MeshNode):
                 "distance", distance,
                 "seq", seq_num,
             )
-
+        return (peripheral_event, seq_num)
 
     def get_iarp_table(self):
         info = {}
@@ -428,35 +491,10 @@ class MeshNode_ZRP(MeshNode):
         peripherals = self.get_peripheral_neighbors()
 
         if not peripherals:
-            self.verboseprint(
-                "At time", round(self.env.now, 3),
-                "node", self.nodeid,
-                "has no peripheral neighbors for IERP; discovery aborted.",
-                "| zone_radius", self.zone_radius,
-                "| iarp_size", len(self.iarp_table),
-            )
-
-            # -------- DEBUG: dump IARP table --------
-            if len(self.iarp_table) > 0:
-                self.verboseprint(
-                    "[IARP TABLE DUMP]",
-                    "node", self.nodeid,
-                )
-                for dest, entry in self.iarp_table.items():
-                    self.verboseprint(
-                        "  dest", dest,
-                        "| nextHop", entry.nextHop,
-                        "| distance", entry.distance,
-                        "| seq", entry.seq_num,
-                        "| last_updated", round(entry.last_updated, 3),
-                    )
-            else:
-                self.verboseprint(
-                    "[IARP TABLE EMPTY]",
-                    "node", self.nodeid,
-                )
-            # ----------------------------------------
-
+            st = self.ierp_waiting.get(destId)
+            if st is None:
+                self.ierp_waiting[destId] = {"tries": 0, "last_kick_seq": None}
+            self.verboseprint("[IERP WAIT]", "node", self.nodeid, "| dest", destId, "| reason=no-peripherals")
             return
 
         self.ierp_seq_num += 1
@@ -880,6 +918,16 @@ class MeshNode_ZRP(MeshNode):
                 "| pending_cnt", len(pending),
             )
 
+            if rrep_route_dest in self.ierp_waiting:
+                self.verboseprint(
+                    "[IERP STOP RETRY]",
+                    "time", round(self.env.now, 3),
+                    "node", self.nodeid,
+                    "| dest", rrep_route_dest,
+                    "| reason=RREP-received"
+                )
+                self.ierp_waiting.pop(rrep_route_dest, None)
+
             route = self.ierp_table.get(rrep_route_dest, None)
             if route is None:
                 self.verboseprint(
@@ -1204,7 +1252,10 @@ class MeshNode_ZRP(MeshNode):
                         continue
 
                     # Update local IARP table
-                    self.handle_iarp(packet)
+                    peripheral_event, new_seq = self.handle_iarp(packet)
+                    if peripheral_event:
+                        self.retry_ierp_waiting(trigger_seq=new_seq)
+
 
                     # Managed flood inside zone
                     remaining = getattr(packet, "hopLimit", self.zone_radius)
