@@ -5,7 +5,7 @@ import simpy
 import random
 import math
 from dataclasses import dataclass
-
+from lib.mac import get_retransmission_msec
 
 @dataclass
 class IARPEntry:
@@ -375,6 +375,92 @@ class MeshNode_ZRP(MeshNode):
 
             self.initiate_route_discovery(destId)
 
+    def zrp_reliable_retransmit(self, p):
+        """
+        EXACT same retransmission logic used in generate_message(),
+        but triggered for queued packets once a route exists.
+        """
+        while p.wantAck:
+            retransmissionMsec = get_retransmission_msec(self, p)
+            yield self.env.timeout(retransmissionMsec)
+
+            ackReceived = False
+            minRetransmissions = self.conf.maxRetransmission
+
+            for packetSent in self.packets:
+                if packetSent.origTxNodeId == self.nodeid and packetSent.seq == p.seq:
+                    if packetSent.retransmissions < minRetransmissions:
+                        minRetransmissions = packetSent.retransmissions
+                    if packetSent.ackReceived:
+                        ackReceived = True
+
+            if ackReceived:
+                self.verboseprint(
+                    'Node', self.nodeid,
+                    'received ACK on queued packet with seq.nr.', p.seq
+                )
+                break
+
+            # -------- retransmit ----------
+            if minRetransmissions > 0:
+
+                # IMPORTANT: queued packet already has routing info
+                nh = getattr(p, "next_hop", None)
+
+                pNew = MeshPacket_ZRP(
+                    self.conf,
+                    self.nodes,
+                    self.nodeid,      # origTxNodeId
+                    p.destId,
+                    self.nodeid,      # txNodeId
+                    p.packetLen,
+                    p.seq,
+                    p.genTime,
+                    p.wantAck,
+                    False,            # isAck
+                    None,
+                    self.env.now,
+                    self.verboseprint,
+
+                    packet_type=None,
+                    hop_count=getattr(p, "hop_count", 0),
+                    covered_nodes=getattr(p, "covered_nodes", None),
+                    iarp_seq_num=getattr(p, "iarp_seq_num", None),
+                    ierp_type=getattr(p, "ierp_type", None),
+                    ierp_id=getattr(p, "ierp_id", None),
+                    ierp_destId=getattr(p, "ierp_destId", None),
+                    next_hop=nh,
+                )
+
+                if hasattr(p, "hopLimit"):
+                    pNew.hopLimit = p.hopLimit
+
+                pNew.data = getattr(p, "data", None)
+                pNew.is_sdn_update = getattr(p, "is_sdn_update", False)
+
+                pNew.retransmissions = minRetransmissions - 1
+
+                self.verboseprint(
+                    round(self.env.now, 3),
+                    'Node', self.nodeid,
+                    'wants to retransmit QUEUED packet to', p.destId,
+                    'with seq.nr.', p.seq,
+                    'minRetransmissions', minRetransmissions,
+                    '| next_hop', nh
+                )
+
+                self.packets.append(pNew)
+                self.env.process(self.transmit(pNew))
+
+            else:
+                self.verboseprint(
+                    'At time', round(self.env.now, 3),
+                    'node', self.nodeid,
+                    'reliable send of queued packet', p.seq, 'failed.'
+                )
+                break
+
+
     def flush_pending_via_iarp(self, destId: int):
         """
         If destId is now inside my zone, send any pending packets via IARP nextHop.
@@ -417,8 +503,11 @@ class MeshNode_ZRP(MeshNode):
                 "| nextHop", p.next_hop,
                 "| hopLimit", getattr(p, "hopLimit", None),
             )
+            p.retransmissions = self.conf.maxRetransmission
             self.packets.append(p)
             self.env.process(self.transmit(p))
+            self.env.process(self.zrp_reliable_retransmit(p))
+
 
         return True
 
@@ -1056,8 +1145,11 @@ class MeshNode_ZRP(MeshNode):
                     "| nextHop", p.next_hop,
                     "| hopLimit", getattr(p, "hopLimit", None),
                 )
+                p.retransmissions = self.conf.maxRetransmission
                 self.packets.append(p)
                 self.env.process(self.transmit(p))
+                self.env.process(self.zrp_reliable_retransmit(p))
+
             return
 
         # ==========================================================
