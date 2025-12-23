@@ -74,7 +74,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1 * 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 2 * 60 * 1000)
 
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
@@ -396,9 +396,12 @@ class MeshNode_ZRP(MeshNode):
 
             if ackReceived:
                 self.verboseprint(
-                    'Node', self.nodeid,
-                    'received ACK on queued packet with seq.nr.', p.seq
+                    "[RETX EXIT ACK]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
                 )
+
                 break
 
             # -------- retransmit ----------
@@ -441,23 +444,27 @@ class MeshNode_ZRP(MeshNode):
                 pNew.retransmissions = minRetransmissions - 1
 
                 self.verboseprint(
-                    round(self.env.now, 3),
-                    'Node', self.nodeid,
-                    'wants to retransmit QUEUED packet to', p.destId,
-                    'with seq.nr.', p.seq,
-                    'minRetransmissions', minRetransmissions,
-                    '| next_hop', nh
+                    "[RETX SEND]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                    "| remaining", pNew.retransmissions,
+                    "| next_hop", getattr(pNew, "next_hop", None),
+                    "| hopLimit", getattr(pNew, "hopLimit", None),
                 )
+
 
                 self.packets.append(pNew)
                 self.env.process(self.transmit(pNew))
 
             else:
                 self.verboseprint(
-                    'At time', round(self.env.now, 3),
-                    'node', self.nodeid,
-                    'reliable send of queued packet', p.seq, 'failed.'
+                    "[RETX EXIT FAIL]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
                 )
+
                 break
 
 
