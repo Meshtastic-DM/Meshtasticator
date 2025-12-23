@@ -160,7 +160,7 @@ class MeshNode_ZRP(MeshNode):
             packetLen=plen,
             seq=messageSeq,
             genTime=self.env.now,
-            wantAck=False,
+            wantAck=wantAck,
             isAck=False,
             requestId=None,
             txTime=self.env.now,
@@ -375,21 +375,69 @@ class MeshNode_ZRP(MeshNode):
 
             self.initiate_route_discovery(destId)
 
+    def flush_pending_via_iarp(self, destId: int):
+        """
+        If destId is now inside my zone, send any pending packets via IARP nextHop.
+        Equivalent to "RREP arrived" flush but using IARP route.
+        """
+        entry = self.iarp_table.get(destId)
+        if entry is None or entry.distance > self.zone_radius:
+            return False
+
+        pending = self.pending_ierp.pop(destId, [])
+        if not pending:
+            # still clear waiting state if any
+            self.ierp_waiting.pop(destId, None)
+            return True
+
+        self.verboseprint(
+            "[IARP FLUSH PENDING]",
+            "time", round(self.env.now, 3),
+            "node", self.nodeid,
+            "| dest", destId,
+            "| nextHop", entry.nextHop,
+            "| pending_cnt", len(pending),
+            "| dist", entry.distance,
+        )
+
+        # stop IERP waiting for this dest (it is intra-zone now)
+        self.ierp_waiting.pop(destId, None)
+
+        for p in pending:
+            p.next_hop = entry.nextHop
+            # keep within zone
+            default_hl = getattr(self, "hopLimit", self.zone_radius)
+            p.hopLimit = min(getattr(p, "hopLimit", default_hl), self.zone_radius)
+
+            self.verboseprint(
+                "[IARP SEND PENDING]",
+                "node", self.nodeid,
+                "| pkt_seq", getattr(p, "seq", None),
+                "| to", destId,
+                "| nextHop", p.next_hop,
+                "| hopLimit", getattr(p, "hopLimit", None),
+            )
+            self.packets.append(p)
+            self.env.process(self.transmit(p))
+
+        return True
+
+
     def handle_iarp(self, packet: MeshPacket_ZRP):
         if not isinstance(packet, MeshPacket_ZRP) or packet.packet_type != "IARP":
-            return (False, None)
+            return (False, False, None, None, None)
 
         src = packet.origTxNodeId
 
         # Do not install routes to yourself
         if src == self.nodeid:
-            return (False, None)
+            return (False, False, None, None, None)
 
         # ----- duplicate suppression -----
         key = (src, packet.iarp_seq_num)
         if key in self.seen_iarp:
             # already processed this IARP from this origin + seq
-            return (False, None)
+            return (False, False, None, None, None)
         self.seen_iarp.add(key)
         # ---------------------------------
 
@@ -400,6 +448,7 @@ class MeshNode_ZRP(MeshNode):
 
         existing = self.iarp_table.get(src, None)
 
+        updated = False
         peripheral_event = False
 
         if (
@@ -415,7 +464,7 @@ class MeshNode_ZRP(MeshNode):
                 if existing is None:
                     peripheral_event = True
                 elif seq_num > existing.seq_num and existing.distance == self.zone_radius:
-                    peripheral_event = True
+                    peripheral_event = False
 
             self.iarp_table[src] = IARPEntry(
                 destId=src,
@@ -424,15 +473,25 @@ class MeshNode_ZRP(MeshNode):
                 seq_num=seq_num,
                 last_updated=now,
             )
+
+            updated = True
+
             self.verboseprint(
-                "At time", round(now, 3),
-                "node", self.nodeid,
-                "updated IARP entry for", src,
-                "via nextHop", packet.txNodeId,
-                "distance", distance,
-                "seq", seq_num,
-            )
-        return (peripheral_event, seq_num)
+                    "[IARP INSTALL]",
+                    "node", self.nodeid,
+                    "| dest", src,
+                    "| nextHop", packet.txNodeId,
+                    "| distance", distance,
+                    "| seq", seq_num,
+                )
+
+    
+            
+
+        if not updated:
+            return (False, False, None, None, None)
+
+        return (True, peripheral_event, src, distance, seq_num)
 
     def get_iarp_table(self):
         info = {}
@@ -1252,9 +1311,19 @@ class MeshNode_ZRP(MeshNode):
                         continue
 
                     # Update local IARP table
-                    peripheral_event, new_seq = self.handle_iarp(packet)
-                    if peripheral_event:
-                        self.retry_ierp_waiting(trigger_seq=new_seq)
+                    updated, peripheral_event, upd_dest, upd_dist, upd_seq = self.handle_iarp(packet)
+
+                    # 1) If the updated destination is something I'm waiting for AND now inside zone -> flush via IARP
+                    if updated and upd_dest is not None:
+                        if upd_dest in self.pending_ierp:
+                            # if now reachable intra-zone, flush immediately
+                            if upd_dist is not None and upd_dist <= self.zone_radius:
+                                self.flush_pending_via_iarp(upd_dest)
+
+                    # 2) Still do your peripheral-triggered retries (for inter-zone discovery)
+                    if updated and peripheral_event:
+                        self.retry_ierp_waiting(trigger_seq=upd_seq)
+
 
 
                     # Managed flood inside zone
