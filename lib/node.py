@@ -268,6 +268,8 @@ class MeshNode:
                         elif self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
                             ############ ZRP version ############
                             from lib.packet_zrp import MeshPacket_ZRP
+                            if getattr(p, "queued_no_route", False):
+                                break   # next message generation cycle
 
                             # Preserve next_hop if your original packet already had it (important for unicast)
                             nh = getattr(p, "next_hop", None)

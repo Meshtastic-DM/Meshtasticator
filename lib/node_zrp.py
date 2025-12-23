@@ -227,7 +227,7 @@ class MeshNode_ZRP(MeshNode):
                 "| nextHop", entry.nextHop,
                 "| distance", entry.distance,
             )
-
+            base_packet.queued_no_route = False
             self.packets.append(pNew)
             self.env.process(self.transmit(pNew))
             return base_packet
@@ -251,7 +251,7 @@ class MeshNode_ZRP(MeshNode):
                 "| nextHop", ierp_entry.nextHop,
                 "| distance", ierp_entry.distance,
             )
-
+            base_packet.queued_no_route = False
             self.packets.append(pNew)
             self.env.process(self.transmit(pNew))
             return base_packet
@@ -265,7 +265,7 @@ class MeshNode_ZRP(MeshNode):
             "| reason=no-route",
         )
 
-
+        base_packet.queued_no_route = True
         self.pending_ierp.setdefault(destId, []).append(base_packet)
         self.initiate_route_discovery(destId)
         return base_packet
@@ -530,6 +530,52 @@ class MeshNode_ZRP(MeshNode):
 
         return None
 
+    def learn_reverse_route_from_data(self, packet):
+        """
+        Learn (install/update) an inter-zone route towards the DATA source (origTxNodeId)
+        using the neighbor that sent this DATA to me (packet.txNodeId).
+
+        This is the key: it happens during DATA forwarding / reception path,
+        independent of whether IERP RREQ reached the true destination.
+        """
+        if packet is None:
+            return
+        if getattr(packet, "packet_type", None) is not None:
+            return  # only DATA/ACK packets (packet_type=None)
+        if getattr(packet, "origTxNodeId", None) is None:
+            return
+        if packet.origTxNodeId == self.nodeid:
+            return  # don't learn a route to myself
+
+        src = packet.origTxNodeId
+        nh  = packet.txNodeId                  # who I heard the packet from
+        dist = getattr(packet, "hop_count", 0) + 1
+
+        # IMPORTANT: Don't overwrite good intra-zone knowledge
+        iarp = self.iarp_table.get(src)
+        if iarp is not None and iarp.distance <= self.zone_radius:
+            return
+
+        # Freshness: use packet.seq as a monotonic-ish freshness indicator for DATA from that source
+        seq = getattr(packet, "seq", 0)
+
+        existing = self.ierp_table.get(src)
+        if existing is None or seq > existing.seq_num or dist < existing.distance:
+            self.ierp_table[src] = IARPEntry(
+                destId=src,
+                nextHop=nh,
+                distance=dist,
+                seq_num=seq,
+                last_updated=self.env.now,
+            )
+            self.verboseprint(
+                "[IERP LEARN FROM DATA]",
+                "node", self.nodeid,
+                "| learned_src", src,
+                "| nextHop", nh,
+                "| dist", dist,
+                "| seq", seq
+            )
 
 
     # =====================================================================
@@ -1373,6 +1419,8 @@ class MeshNode_ZRP(MeshNode):
                 # ==================================================
                 if packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
                     if packet.packet_type is None:
+                        # Destination also learns reverse route to the source (helps ACK immediately)
+                        self.learn_reverse_route_from_data(packet)
                         self.verboseprint(
                             "[DATA RECV]",
                             "time", round(self.env.now, 3),
@@ -1574,6 +1622,8 @@ class MeshNode_ZRP(MeshNode):
                 else:
                     # ------------- UNICAST: use IARP hop-by-hop -------------
                     if packet.destId != NODENUM_BROADCAST:
+                        # Learn reverse path to the DATA source along the forward path
+                        self.learn_reverse_route_from_data(packet)
                         # If this packet has a next_hop and it's not me → ignore
                         if (
                             hasattr(packet, "next_hop")
