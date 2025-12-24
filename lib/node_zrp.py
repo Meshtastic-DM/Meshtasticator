@@ -1803,6 +1803,31 @@ class MeshNode_ZRP(MeshNode):
                         elif a is not None and a.distance <= self.zone_radius:
                             route_type = "IARP"
 
+                        # ------------------------------------------------------------
+                        # Neighbor learning: if forwarding via IARP, ensure txNodeId is
+                        # in my IARP table (only if missing). Use seq_num = 0.
+                        # ------------------------------------------------------------
+                        if route_type == "IARP":
+                            nbr = packet.txNodeId  # who I received it from
+                            if nbr is not None and nbr != self.nodeid:
+                                if self.iarp_table.get(nbr) is None:
+                                    self.iarp_table[nbr] = IARPEntry(
+                                        destId=nbr,
+                                        nextHop=nbr,          # direct neighbor
+                                        distance=1,           # 1-hop neighbor
+                                        seq_num=0,            # your requirement
+                                        last_updated=self.env.now,
+                                    )
+                                    self.verboseprint(
+                                        "[IARP NEIGHBOR ADD]",
+                                        "node", self.nodeid,
+                                        "| nbr", nbr,
+                                        "| nextHop", nbr,
+                                        "| dist", 1,
+                                        "| seq", 0
+                                    )
+
+
                         # ---------------- Better logging ----------------
                         if nh is None:
                             self.verboseprint(
