@@ -97,8 +97,8 @@ class Config:
         self.ZRP_IERP_MAX_TTL = 7  # Maximum TTL for IERP queries (default: 10 hops)
         self.ZRP_ROUTE_CACHE_TIMEOUT = 3600 * self.ONE_SECOND_INTERVAL  # Route cache timeout in ms (default: 3600 seconds = 1 hour, ensures routes persist for full simulation)
 
-        self.ZRP_IARP_FLUSH_DELAY_MSEC = 2500
-        self.ZRP_IARP_FLUSH_JITTER_MSEC = 1200
+        self.ZRP_IARP_FLUSH_DELAY_MSEC = 3000
+        self.ZRP_IARP_FLUSH_JITTER_MSEC = 1400
 
         #####################################################
         ####### ASYMMETRIC LINK SIMULATION VARIABLES ########
