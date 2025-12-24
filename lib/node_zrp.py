@@ -496,24 +496,32 @@ class MeshNode_ZRP(MeshNode):
         # stop IERP waiting for this dest (it is intra-zone now)
         self.ierp_waiting.pop(destId, None)
 
-        for p in pending:
+        BASE_DELAY = getattr(self.conf, "ZRP_IARP_FLUSH_DELAY_MSEC", 1200)   # tune (same scale as IERP flush)
+        JITTER     = getattr(self.conf, "ZRP_IARP_FLUSH_JITTER_MSEC", 200)
+
+        for i, p in enumerate(pending):
             p.next_hop = entry.nextHop
+
             # keep within zone
             default_hl = getattr(self, "hopLimit", self.zone_radius)
             p.hopLimit = min(getattr(p, "hopLimit", default_hl), self.zone_radius)
 
+            p.retransmissions = self.conf.maxRetransmission
+
+            delay = i * BASE_DELAY + random.uniform(0, JITTER)
+
             self.verboseprint(
-                "[IARP SEND PENDING]",
+                "[IARP SEND PENDING PACED]",
+                "time", round(self.env.now, 3),
                 "node", self.nodeid,
                 "| pkt_seq", getattr(p, "seq", None),
                 "| to", destId,
                 "| nextHop", p.next_hop,
                 "| hopLimit", getattr(p, "hopLimit", None),
+                "| delay", round(delay, 3),
             )
-            p.retransmissions = self.conf.maxRetransmission
-            self.packets.append(p)
-            self.env.process(self.transmit(p))
-            self.env.process(self.zrp_reliable_retransmit(p))
+
+            self.env.process(self.paced_send_pending(p, delay))
 
 
         return True
@@ -1148,7 +1156,7 @@ class MeshNode_ZRP(MeshNode):
                 )
                 return
 
-            BASE_DELAY = getattr(self.conf, "ZRP_PENDING_FLUSH_DELAY_MSEC", 1000)  # tune
+            BASE_DELAY = getattr(self.conf, "ZRP_PENDING_FLUSH_DELAY_MSEC", 1200)  # tune
             JITTER     = getattr(self.conf, "ZRP_PENDING_FLUSH_JITTER_MSEC", 200)
 
             for i, p in enumerate(pending):
