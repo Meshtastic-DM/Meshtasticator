@@ -11,7 +11,11 @@ class Config:
         ZRP = 'ZRP'
 
     def __init__(self):
-        self.MODEL = 5  # Path loss model to use (see README)
+        ############################Path Loss Model Parameters############################
+        self.MODEL = 1  # Path loss model to use (see README)
+        self.USE_NAKAGAMI = False  # Whether to use Nakagami fading on top of path loss
+        self.NAKAGAMI_M = 1.0  # Nakagami m parameter (1 = Rayleigh, >1 milder fading)
+        ############################End of Path Loss Model Parameters############################
 
         self.XSIZE = 15000  # horizontal size of the area to simulate in m
         self.YSIZE = 15000  # vertical size of the area to simulate in m
@@ -50,7 +54,7 @@ class Config:
         self.REGION = self.regions["US"]  # Select a different region here
         self.CHANNEL_NUM = 27  # Channel number
 
-        self.PLOT = True # whether to plot the time schedule of packets after the simulation
+        self.PLOT = False # whether to plot the time schedule of packets after the simulation
         ### End of discrete-event specific ###
 
         ### PHY parameters (normally no change needed) ###
@@ -138,6 +142,12 @@ class Config:
 
         self.Packet_Version = 2 # 1 for original, 2 for AODV
 
+        ####### Power Consumption Model Parameters ########
+        self.Tx_Powr = 0.4125  # Power consumption in W for transmitting
+        self.Rx_Powr = 0.0236    # Power consumption in W for receiving
+        self.Idle_Powr = 0.0825 # Power consumption in W for idle state
+        self.Sleep_Powr = 0.000015  # Power consumption in W for sleep state
+        #####################################################
     # Function that needs to be run to ensure the router dependent variables change appropriately
     def update_router_dependencies(self):
         # Example: Overwrite hop limit in the case of X new awesome routing algorithm

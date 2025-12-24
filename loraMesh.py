@@ -29,8 +29,21 @@ def verboseprint(*args, **kwargs):
 
 def parse_params(conf, args):
 	# TODO: refactor with argparse
+	routing_type = None
+	
+	# Check for --route-type argument
+	if "--route-type" in args:
+		route_type_index = args.index("--route-type")
+		if route_type_index + 1 < len(args):
+			routing_type = args[route_type_index + 1]
+			# Remove --route-type and its value from args
+			args = args[:route_type_index] + args[route_type_index + 2:]
+		else:
+			print("Error: --route-type requires a value")
+			exit(1)
+	
 	if len(args) > 3:
-		print("Usage: ./loraMesh [nr_nodes] [--from-file [file_name]]")
+		print("Usage: ./loraMesh [nr_nodes] [--from-file [file_name]] [--route-type ROUTING_TYPE]")
 		print("Do not specify the number of nodes when reading from a file.")
 		exit(1)
 	else:
@@ -40,8 +53,27 @@ def parse_params(conf, args):
 					string = args[2]
 				else:
 					string = 'nodeConfig.yaml'
-				with open(os.path.join("out", string), 'r') as file:
+				
+				# Check if path is absolute or already contains directory separators
+				if os.path.isabs(string) or os.path.dirname(string):
+					config_path = string
+				else:
+					config_path = os.path.join("out", string)
+				
+				with open(config_path, 'r') as file:
 					config = yaml.load(file, Loader=yaml.FullLoader)
+				
+				# Apply routing type if specified
+				if routing_type:
+					try:
+						routerType = conf.ROUTER_TYPE(routing_type)
+						conf.SELECTED_ROUTER_TYPE = routerType
+						conf.update_router_dependencies()
+					except ValueError:
+						valid_types = [member.name for member in conf.ROUTER_TYPE]
+						print(f"Invalid router type: {routing_type}")
+						print(f"Router type must be one of: {', '.join(valid_types)}")
+						exit(1)
 			else:
 				conf.NR_NODES = int(args[1])
 				config = [None for _ in range(conf.NR_NODES)]
@@ -55,6 +87,17 @@ def parse_params(conf, args):
 						# If it fails, print possible values
 						valid_types = [member.name for member in conf.ROUTER_TYPE]
 						print(f"Invalid router type: {args[2]}")
+						print(f"Router type must be one of: {', '.join(valid_types)}")
+						exit(1)
+				elif routing_type:
+					# Use --route-type if no positional routing type provided
+					try:
+						routerType = conf.ROUTER_TYPE(routing_type)
+						conf.SELECTED_ROUTER_TYPE = routerType
+						conf.update_router_dependencies()
+					except ValueError:
+						valid_types = [member.name for member in conf.ROUTER_TYPE]
+						print(f"Invalid router type: {routing_type}")
 						print(f"Router type must be one of: {', '.join(valid_types)}")
 						exit(1)
 				if conf.NR_NODES == -1:
@@ -386,7 +429,11 @@ plt.title("Reliability from Sensors to Destination Node 0")
 plt.xticks(x, [f"Src {i}" for i in x])
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 realiabilityDm = [[0 for _ in range(N)] for _ in range(N)]
 for source in range(N):
@@ -420,7 +467,11 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 realibilityBroadcast = [0 for _ in range(N)]
 
@@ -444,7 +495,11 @@ plt.ylabel("Reliability of Broadcast Packets")
 plt.title("Broadcast Packet Delivery Reliability")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 delaySensor = [0 for _ in range(N)]
 dest = 0
@@ -471,7 +526,11 @@ plt.ylabel("Average Delay of Sensor Packets to Destination 0 (ms)")
 plt.title("Sensor Packet Delay to Destination 0")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 delayDM = [[0 for _ in range(N)] for _ in range(N)]
 for source in range(N):
@@ -502,7 +561,11 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 delayBroadcast = [0 for _ in range(N)]
 source = 0
@@ -529,7 +592,11 @@ plt.ylabel("Average Delay of Broadcast Packets (ms)")
 plt.title("Broadcast Packet Delay")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 extraSensorPacketsRatio = [0 for _ in range(N)]
 dest = 0
@@ -555,7 +622,11 @@ plt.ylabel("Extra Sensor Packets Ratio")
 plt.title("Extra Sensor Packets Ratio from Sources to Destination 0")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 extraDMPacketsRatio = [[0 for _ in range(N)] for _ in range(N)]
 for source in range(N):
@@ -586,7 +657,11 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
 
 extraBroadcastPacketsRatio = [0 for _ in range(N)]
 source = 0
@@ -609,7 +684,44 @@ plt.ylabel("Extra Broadcast Packets Ratio")
 plt.title("Extra Broadcast Packets Ratio from Source 0")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.show()
+plt.savefig(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+import pickle
+with open(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+    pickle.dump(plt.gcf(), f)
+plt.close()
+
+energyConsumedPerNode = {}
+for n in nodes:
+	energyConsumedPerNode[n.nodeid] = n.totalEnergyConsumedJ
+
+# Convert to array for plotting
+energyArray = np.array([energyConsumedPerNode.get(i, np.nan) for i in range(N)])
+
+# Plot energy consumption
+plt.figure(figsize=(8, 6))
+bars = plt.bar(range(len(energyArray)), energyArray, color='skyblue', edgecolor='black')
+# Add value labels on top of each bar
+for i, val in enumerate(energyArray):
+	if not np.isnan(val):
+		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+plt.xlabel("Node ID")
+plt.ylabel("Energy Consumed (J)")
+plt.title("Energy Consumption per Node")
+plt.grid(axis='y')
+plt.tight_layout()
+plt.savefig(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+	pickle.dump(plt.gcf(), f)
+plt.close()
+
+# Save energy consumption to CSV
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.csv", mode="w", newline="") as f:
+	writer = csv.writer(f)
+	writer.writerow(["node_id", "energy_consumed_J"])
+	for node_id, energy in sorted(energyConsumedPerNode.items()):
+		writer.writerow([node_id, f"{energy:.4f}"])
+
+
 
 def save_nested_dict_to_csv(data, filename):
     """
@@ -710,3 +822,5 @@ save_reliability_vector_to_csv(
     node_ids=list(range(N)),
     column_name="reliability_from_src_0"
 )
+
+print("\nSimulation complete.")
