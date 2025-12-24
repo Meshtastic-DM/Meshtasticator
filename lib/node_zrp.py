@@ -521,7 +521,9 @@ class MeshNode_ZRP(MeshNode):
                 "| delay", round(delay, 3),
             )
 
-            self.env.process(self.paced_send_pending(p, delay))
+            self.packets.append(p)
+            self.env.process(self.transmit(p))
+            self.env.process(self.zrp_reliable_retransmit(p))
 
 
         return True
@@ -1179,7 +1181,9 @@ class MeshNode_ZRP(MeshNode):
                     "| delay", round(delay, 3),
                 )
 
-                self.env.process(self.paced_send_pending(p, delay))
+                self.packets.append(p)
+                self.env.process(self.transmit(p))
+                self.env.process(self.zrp_reliable_retransmit(p))
 
 
             return
