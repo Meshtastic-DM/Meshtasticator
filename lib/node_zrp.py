@@ -664,7 +664,7 @@ class MeshNode_ZRP(MeshNode):
         seq = getattr(packet, "seq", 0)
 
         existing = self.ierp_table.get(src)
-        if existing is None or seq > existing.seq_num or dist < existing.distance:
+        if (existing is None or seq > existing.seq_num or dist < existing.distance) and dist > self.zone_radius:
             self.ierp_table[src] = IARPEntry(
                 destId=src,
                 nextHop=nh,
@@ -1583,7 +1583,7 @@ class MeshNode_ZRP(MeshNode):
                             txTime=self.env.now,
                             verboseprint=self.verboseprint,
                             packet_type=None,                           # DATA/ACK
-                            hop_count=getattr(packet, "hop_count", 0) + 1,
+                            hop_count=0,
                             next_hop=self.get_next_hop_to(packet.origTxNodeId),  # IMPORTANT for unicast ACK
                         )
 
