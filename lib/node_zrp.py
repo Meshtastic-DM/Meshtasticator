@@ -1584,7 +1584,7 @@ class MeshNode_ZRP(MeshNode):
                             verboseprint=self.verboseprint,
                             packet_type=None,                           # DATA/ACK
                             hop_count=0,
-                            next_hop=self.get_next_hop_to(packet.origTxNodeId),  # IMPORTANT for unicast ACK
+                            next_hop=packet.txNodeId,  # IMPORTANT for unicast ACK
                         )
 
                         self.packets.append(ack_packet)
