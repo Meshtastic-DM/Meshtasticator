@@ -1664,23 +1664,29 @@ class MeshNode_ZRP(MeshNode):
                                     pNew = MeshPacket_ZRP(
                                         self.conf,
                                         self.nodes,
-                                        packet.origTxNodeId,
-                                        packet.destId,
-                                        self.nodeid,
-                                        packet.packetLen,
-                                        packet.seq,
-                                        packet.genTime,
-                                        packet.wantAck,
-                                        packet.isAck,
-                                        None,
-                                        self.env.now,
-                                        self.verboseprint,
-                                        None,   # packet_type = None (DATA)
-                                        None,
-                                        None,
-                                        None,
-                                        getattr(packet, "hop_count", 0) + 1,
+                                        origTxNodeId=packet.origTxNodeId,
+                                        destId=packet.destId,              # broadcast
+                                        txNodeId=self.nodeid,              # I'm rebroadcasting
+                                        packetLen=packet.packetLen,        # DATA keeps caller packetLen
+                                        seq=packet.seq,
+                                        genTime=packet.genTime,
+                                        wantAck=packet.wantAck,
+                                        isAck=packet.isAck,
+                                        requestId=None,
+                                        txTime=self.env.now,
+                                        verboseprint=self.verboseprint,
+
+                                        # ---- keyword-only ZRP fields ----
+                                        packet_type=None,                  # DATA
+                                        iarp_seq_num=None,
+                                        ierp_type=None,
+                                        ierp_id=None,
+                                        ierp_destId=None,
+                                        hop_count=getattr(packet, "hop_count", 0) + 1,
+                                        covered_nodes=None,
+                                        next_hop=None,                     # broadcast => no next hop
                                     )
+
                                     self.packets.append(pNew)
                                     self.env.process(self.transmit(pNew))
                                     self.verboseprint(

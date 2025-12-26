@@ -5,8 +5,8 @@ This script automates running multiple simulations with different random topolog
 and different routing protocols, organizing outputs in separate directories.
 
 Usage:
-    python run_batch_simulations.py --runs 10 --routing AODV SDN_AODV MANAGED_FLOOD
-    python run_batch_simulations.py --runs 5 --params topology_params.yaml --routing SDN_AODV
+    python run_batch_simulations.py --runs 10 --routing AODV ZRP MANAGED_FLOOD
+    python run_batch_simulations.py --runs 5 --params topology_params.yaml --routing ZRP
 """
 
 import argparse
@@ -295,7 +295,7 @@ Examples:
   python run_batch_simulations.py --runs 10
   
   # Run 5 simulations with specific routing types
-  python run_batch_simulations.py --runs 5 --routing AODV SDN_AODV
+  python run_batch_simulations.py --runs 5 --routing AODV ZRP
   
   # Use custom topology parameters
   python run_batch_simulations.py --runs 10 --params topology_params.yaml
@@ -310,8 +310,8 @@ Examples:
     parser.add_argument('--params', '-p', type=str, default='topology_params.yaml',
                        help='Topology parameters YAML file (default: topology_params.yaml)')
     parser.add_argument('--routing', '-r', nargs='+',
-                       default=['AODV', 'SDN_AODV', 'MANAGED_FLOOD'],
-                       help='Routing protocols to test (default: AODV SDN_AODV MANAGED_FLOOD)')
+                       default=['AODV', 'ZRP', 'MANAGED_FLOOD'],
+                       help='Routing protocols to test (default: AODV ZRP MANAGED_FLOOD)')
     parser.add_argument('--output', '-o', type=str,
                        default=None,
                        help='Base output directory (default: batch_results_TIMESTAMP)')
