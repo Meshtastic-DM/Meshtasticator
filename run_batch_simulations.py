@@ -59,28 +59,45 @@ def get_python_executable():
     return sys.executable
 
 
-def run_command(cmd, description, env=None):
+def run_command(cmd, description, env=None, log_file=None):
     """
     Run a shell command and return success status.
-    
-    Args:
-        cmd: Command list to execute
-        description: Description for logging
-        env: Optional environment variables dict
-    
-    Returns:
-        True if successful, False otherwise
+    Optionally write stdout/stderr to a log file.
     """
     print(f"  {description}...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env
+        )
+
+        if log_file is not None:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("STDOUT:\n")
+                f.write(result.stdout or "")
+                f.write("\n\nSTDERR:\n")
+                f.write(result.stderr or "")
+
         return True
+
     except subprocess.CalledProcessError as e:
         print(f"  ERROR: {description} failed!")
+
+        if log_file is not None:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("STDOUT:\n")
+                f.write(e.stdout or "")
+                f.write("\n\nSTDERR:\n")
+                f.write(e.stderr or "")
+
         if e.stderr:
             print(f"  {e.stderr}")
         if e.stdout:
             print(f"  {e.stdout}")
+
         return False
 
 
@@ -146,7 +163,15 @@ def run_simulation(config_file, routing_type, output_dir):
     env = os.environ.copy()
     env['MPLBACKEND'] = 'Agg'  # Use non-interactive backend
     
-    success = run_command(cmd, f"Running simulation with {routing_type}", env=env)
+    log_file = output_dir / "terminal_output.txt"
+
+    success = run_command(
+        cmd,
+        f"Running simulation with {routing_type}",
+        env=env,
+        log_file=log_file
+    )
+
     
     if success:
         # Move output files to run-specific directory
