@@ -74,7 +74,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 2 * 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 1 * 60 * 1000)
 
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
@@ -278,13 +278,20 @@ class MeshNode_ZRP(MeshNode):
 
     def _iarp_periodic_process(self):
         """
-        Periodically broadcast IARP updates within the zone.
-
-        Every iarp_period_msec, this node sends an IARP packet
-        advertising itself with distance 0 and hopLimit = ZRP_ZONE_RADIUS.
+        IARP period is P1 for the first 35 minutes, then P2 afterwards.
+        env.now is in ms.
         """
+        SWITCH_MS = 30 * 60 * 1000  # 35 minutes in ms
+
+        # set these however you want (ms)
+        P1 = getattr(self.conf, "IARP_PERIOD_MSEC_PHASE1", 4 * 60 * 1000)  # default 1 min
+        P2 = getattr(self.conf, "IARP_PERIOD_MSEC_PHASE2", 30 * 60 * 1000)  # default 5 min
+
         while True:
-            nextGen = self.get_next_time(self.iarp_period_msec)
+            # choose period based on current sim time
+            period = P1 if self.env.now < SWITCH_MS else P2
+
+            nextGen = self.get_next_time(period)
             if nextGen < 0:
                 break
             yield self.env.timeout(nextGen)
@@ -304,9 +311,9 @@ class MeshNode_ZRP(MeshNode):
                 self.conf,
                 self.nodes,
                 origTxNodeId=self.nodeid,
-                destId=NODENUM_BROADCAST,   # zone-broadcast
+                destId=NODENUM_BROADCAST,
                 txNodeId=self.nodeid,
-                packetLen=0,                 # overridden by MeshPacket_ZRP for IARP
+                packetLen=0,
                 seq=messageSeq,
                 genTime=self.env.now,
                 wantAck=False,
@@ -316,9 +323,8 @@ class MeshNode_ZRP(MeshNode):
                 verboseprint=self.verboseprint,
                 packet_type="IARP",
                 iarp_seq_num=self.iarp_seq_num,
-                hop_count=0,                 # origin: 0 hops from itself
+                hop_count=0,
             )
-            # managed flooding TTL inside zone
             p.hopLimit = self.zone_radius
 
             self.verboseprint(
@@ -326,6 +332,7 @@ class MeshNode_ZRP(MeshNode):
                 "node", self.nodeid,
                 "broadcasting IARP update with seq", self.iarp_seq_num,
                 "hopLimit", p.hopLimit,
+                "| period", period,
             )
 
             self.packets.append(p)
