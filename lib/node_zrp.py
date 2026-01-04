@@ -74,7 +74,7 @@ class MeshNode_ZRP(MeshNode):
         self.iarp_seq_num = 0
 
         # IARP periodic update interval (ms)
-        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 4 * 60 * 1000)
+        self.iarp_period_msec = getattr(self.conf, "IARP_PERIOD_MSEC", 2 * 60 * 1000)
 
         # Placeholder for future IERP/BRP usage
         self.pending_ierp = {}  # key: destId, value: list of packets waiting for route
@@ -542,17 +542,16 @@ class MeshNode_ZRP(MeshNode):
         # ----- duplicate suppression -----
         key = (src, packet.iarp_seq_num)
         if key in self.seen_iarp:
-            # already processed this IARP from this origin + seq
             return (False, False, None, None, None)
         self.seen_iarp.add(key)
         # ---------------------------------
 
-        # at the receiver, distance is at least 1 hop from source
         distance = getattr(packet, "hop_count", 0) + 1
         seq_num = packet.iarp_seq_num
         now = self.env.now
 
         existing = self.iarp_table.get(src, None)
+        is_new_entry = (existing is None)
 
         updated = False
         peripheral_event = False
@@ -563,9 +562,6 @@ class MeshNode_ZRP(MeshNode):
             or (seq_num == existing.seq_num and distance < existing.distance)
         ):
 
-            # detect peripheral-related event:
-            #  - new entry that is peripheral
-            #  - existing peripheral entry gets newer seq
             if distance == self.zone_radius:
                 if existing is None:
                     peripheral_event = True
@@ -579,25 +575,36 @@ class MeshNode_ZRP(MeshNode):
                 seq_num=seq_num,
                 last_updated=now,
             )
-
             updated = True
 
             self.verboseprint(
-                    "[IARP INSTALL]",
-                    "node", self.nodeid,
-                    "| dest", src,
-                    "| nextHop", packet.txNodeId,
-                    "| distance", distance,
-                    "| seq", seq_num,
-                )
+                "[IARP INSTALL]",
+                "node", self.nodeid,
+                "| dest", src,
+                "| nextHop", packet.txNodeId,
+                "| distance", distance,
+                "| seq", seq_num,
+            )
 
-    
-            
+            # ------------------------------
+            # LOG ONLY NEW ENTRY
+            # ------------------------------
+            if is_new_entry:
+                with open("iarp_table.txt", "a", encoding="utf-8") as f:
+                    f.write(
+                        f"time={now:.3f} "
+                        f"node={self.nodeid} "
+                        f"dest={src} "
+                        f"nextHop={packet.txNodeId} "
+                        f"dist={distance} "
+                        f"seq={seq_num}\n"
+                    )
 
         if not updated:
             return (False, False, None, None, None)
 
         return (True, peripheral_event, src, distance, seq_num)
+
 
     def get_iarp_table(self):
         info = {}
