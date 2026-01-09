@@ -67,7 +67,7 @@ def plot_comparison(data, output_file=None):
                 label=routing,
                 color=colors.get(routing, None))
     
-    ax1.set_xlabel('Broadcast Message Generation Interval (s)', fontsize=12, fontweight='bold')
+    ax1.set_xlabel('Broadcast Message Generation Interval (minutes)', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Broadcast Delay (ms)', fontsize=12, fontweight='bold')
     ax1.set_title('Broadcast Delay vs Message Generation Interval', fontsize=14, fontweight='bold')
     ax1.legend(fontsize=11)
@@ -86,7 +86,7 @@ def plot_comparison(data, output_file=None):
                 label=routing,
                 color=colors.get(routing, None))
     
-    ax2.set_xlabel('Broadcast Message Generation Interval (s)', fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Broadcast Message Generation Interval (minutes)', fontsize=12, fontweight='bold')
     ax2.set_ylabel('Broadcast Reliability (0-1)', fontsize=12, fontweight='bold')
     ax2.set_title('Broadcast Reliability vs Message Generation Interval', fontsize=14, fontweight='bold')
     ax2.legend(fontsize=11)
@@ -139,7 +139,7 @@ def plot_combined_metric(data, output_file=None):
                 label=routing,
                 color=colors.get(routing, None))
     
-    ax.set_xlabel('Broadcast Message Generation Interval (s)', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Broadcast Message Generation Interval (minutes)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Combined Performance Score (0-1)', fontsize=12, fontweight='bold')
     ax.set_title('Combined Performance (Reliability + Normalized Delay)', fontsize=14, fontweight='bold')
     ax.legend(fontsize=11)
@@ -179,7 +179,7 @@ def plot_bar_comparison(data, output_file=None):
         offset = width * (i - len(routing_types)/2 + 0.5)
         ax1.bar(x + offset, delays, width, label=routing, color=colors.get(routing, None))
     
-    ax1.set_xlabel('Broadcast Message Generation Interval (s)', fontsize=12, fontweight='bold')
+    ax1.set_xlabel('Broadcast Message Generation Interval (minutes)', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Broadcast Delay (ms)', fontsize=12, fontweight='bold')
     ax1.set_title('Broadcast Delay Comparison', fontsize=14, fontweight='bold')
     ax1.set_xticks(x)
@@ -194,7 +194,7 @@ def plot_bar_comparison(data, output_file=None):
         offset = width * (i - len(routing_types)/2 + 0.5)
         ax2.bar(x + offset, reliabilities, width, label=routing, color=colors.get(routing, None))
     
-    ax2.set_xlabel('Broadcast Message Generation Interval (s)', fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Broadcast Message Generation Interval (minutes)', fontsize=12, fontweight='bold')
     ax2.set_ylabel('Broadcast Reliability (0-1)', fontsize=12, fontweight='bold')
     ax2.set_title('Broadcast Reliability Comparison', fontsize=14, fontweight='bold')
     ax2.set_xticks(x)

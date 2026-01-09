@@ -1,5 +1,5 @@
 T = readtable('results3.csv');
-Legend = T.RoutingType;
+Legend = {'AODV - (DM,Sensor), Managed Flooding - (Broadcast)','Managed Flooding for Every Traffic'};
 BroadcastDelays = T.BroadcastDelayMean;
 SensorDelays = T.SensorDelayMean;
 DMDelays = T.DMDelayMean;
