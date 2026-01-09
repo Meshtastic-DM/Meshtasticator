@@ -27,7 +27,7 @@ class Config:
         self.HM = 1.0  # height of each node in m
 
         ### Meshtastic specific ###
-        self.hopLimit = 3  # default 3
+        self.hopLimit = 7  # default 3
         self.router = False  # set role of each node as router (True) or normal client (False)
         self.maxRetransmission = 3  # default 3 -- not configurable by Meshtastic
         ### End of Meshtastic specific ###
@@ -90,7 +90,7 @@ class Config:
         ############################
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
-        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.AODV
+        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.ZRP
 
         ############################
         #### ZRP CONFIGURATION #####
@@ -100,6 +100,11 @@ class Config:
         self.ZRP_IARP_UPDATE_INTERVAL = 10 * self.ONE_SECOND_INTERVAL  # IARP update interval in ms (default: 10 seconds)
         self.ZRP_IERP_MAX_TTL = 7  # Maximum TTL for IERP queries (default: 10 hops)
         self.ZRP_ROUTE_CACHE_TIMEOUT = 3600 * self.ONE_SECOND_INTERVAL  # Route cache timeout in ms (default: 3600 seconds = 1 hour, ensures routes persist for full simulation)
+
+        self.ZRP_FLUSH_DELAY_MSEC = 3000
+        self.ZRP_FLUSH_JITTER_MSEC = 1200
+
+       
 
         #####################################################
         ####### ASYMMETRIC LINK SIMULATION VARIABLES ########

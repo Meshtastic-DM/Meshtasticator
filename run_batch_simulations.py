@@ -5,8 +5,8 @@ This script automates running multiple simulations with different random topolog
 and different routing protocols, organizing outputs in separate directories.
 
 Usage:
-    python run_batch_simulations.py --runs 10 --routing AODV SDN_AODV MANAGED_FLOOD
-    python run_batch_simulations.py --runs 5 --params topology_params.yaml --routing SDN_AODV
+    python run_batch_simulations.py --runs 10 --routing AODV ZRP MANAGED_FLOOD
+    python run_batch_simulations.py --runs 5 --params topology_params.yaml --routing ZRP
 """
 
 import argparse
@@ -59,28 +59,45 @@ def get_python_executable():
     return sys.executable
 
 
-def run_command(cmd, description, env=None):
+def run_command(cmd, description, env=None, log_file=None):
     """
     Run a shell command and return success status.
-    
-    Args:
-        cmd: Command list to execute
-        description: Description for logging
-        env: Optional environment variables dict
-    
-    Returns:
-        True if successful, False otherwise
+    Optionally write stdout/stderr to a log file.
     """
     print(f"  {description}...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env
+        )
+
+        if log_file is not None:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("STDOUT:\n")
+                f.write(result.stdout or "")
+                f.write("\n\nSTDERR:\n")
+                f.write(result.stderr or "")
+
         return True
+
     except subprocess.CalledProcessError as e:
         print(f"  ERROR: {description} failed!")
+
+        if log_file is not None:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("STDOUT:\n")
+                f.write(e.stdout or "")
+                f.write("\n\nSTDERR:\n")
+                f.write(e.stderr or "")
+
         if e.stderr:
             print(f"  {e.stderr}")
         if e.stdout:
             print(f"  {e.stdout}")
+
         return False
 
 
@@ -146,7 +163,15 @@ def run_simulation(config_file, routing_type, output_dir):
     env = os.environ.copy()
     env['MPLBACKEND'] = 'Agg'  # Use non-interactive backend
     
-    success = run_command(cmd, f"Running simulation with {routing_type}", env=env)
+    log_file = output_dir / "terminal_output.txt"
+
+    success = run_command(
+        cmd,
+        f"Running simulation with {routing_type}",
+        env=env,
+        log_file=log_file
+    )
+
     
     if success:
         # Move output files to run-specific directory
@@ -295,7 +320,7 @@ Examples:
   python run_batch_simulations.py --runs 10
   
   # Run 5 simulations with specific routing types
-  python run_batch_simulations.py --runs 5 --routing AODV SDN_AODV
+  python run_batch_simulations.py --runs 5 --routing AODV ZRP
   
   # Use custom topology parameters
   python run_batch_simulations.py --runs 10 --params topology_params.yaml
@@ -310,8 +335,8 @@ Examples:
     parser.add_argument('--params', '-p', type=str, default='topology_params.yaml',
                        help='Topology parameters YAML file (default: topology_params.yaml)')
     parser.add_argument('--routing', '-r', nargs='+',
-                       default=['AODV', 'SDN_AODV', 'MANAGED_FLOOD'],
-                       help='Routing protocols to test (default: AODV SDN_AODV MANAGED_FLOOD)')
+                       default=['AODV', 'ZRP', 'MANAGED_FLOOD'],
+                       help='Routing protocols to test (default: AODV ZRP MANAGED_FLOOD)')
     parser.add_argument('--output', '-o', type=str,
                        default=None,
                        help='Base output directory (default: batch_results_TIMESTAMP)')
