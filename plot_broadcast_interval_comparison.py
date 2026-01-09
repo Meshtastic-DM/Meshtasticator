@@ -50,8 +50,8 @@ def plot_comparison(data, output_file=None):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
     # Colors and markers for different routing types
-    colors = {'AODV': '#1f77b4', 'MANAGED_FLOOD': '#ff7f0e', 'SDN_AODV': '#2ca02c'}
-    markers = {'AODV': 'o', 'MANAGED_FLOOD': 's', 'SDN_AODV': '^'}
+    colors = {'AODV': '#1f77b4', 'MANAGED_FLOOD': '#ff7f0e', 'ZRP': '#2ca02c'}
+    markers = {'AODV': 'o', 'MANAGED_FLOOD': 's', 'ZRP': '^'}
     
     routing_types = list(data.keys())
     
