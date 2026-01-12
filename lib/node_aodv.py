@@ -249,6 +249,8 @@ class MeshNode_AODV(MeshNode):
     
     def receive(self, pipe):
         while True:
+            if not self.alive:
+                return
             packet = yield pipe.get()
             if packet.sensedByN[self.nodeid] and not packet.collidedAtN[self.nodeid] and packet.onAirToN[self.nodeid]:  # start of reception
                 if not self.isTransmitting:

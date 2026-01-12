@@ -29,6 +29,7 @@ class MeshNode:
             self.hopLimit = nodeConfig['hopLimit']
             self.antennaGain = nodeConfig['antennaGain']
             self.simRole = nodeConfig.get('simRole', 'DM')  # Default to 'DM' if not specified
+            self.batteryCapacityJ = nodeConfig.get('batteryCapacityJ', self.conf.DEFAULT_BATTERY_CAPACITY_J)
         else:
             self.x, self.y = find_random_position(self.conf, nodes)
             self.z = self.conf.HM
@@ -84,7 +85,9 @@ class MeshNode:
         self.channelUtilizationIndex = 0  # which "bucket" is current
         self.prevTxAirUtilization = 0.0   # how much total tx air-time had been used at last sample
 
+        #This variable tracks total energy consumed by the node and the battery level can be computed based on this value.
         self.totalEnergyConsumedJ = 0.0  # total energy consumed in Joules
+        self.alive = True
 
         env.process(self.track_channel_utilization(env))
         if (not self.isRepeater) and (not self.isRouter):  # repeaters don't generate messages themselves
@@ -138,7 +141,8 @@ class MeshNode:
 
     def move_node(self, env):
         while True:
-
+            if not self.alive:
+                break
             # Pick a random direction and distance
             angle = 2 * math.pi * self.moveRng.random()
             distance = self.movementStepSize * self.moveRng.random()
@@ -179,6 +183,7 @@ class MeshNode:
                 yield env.timeout(nextMove)
             else:
                 break
+        return
 
     def send_packet(self, destId, type=""):
         # increment the shared counter
@@ -218,6 +223,8 @@ class MeshNode:
 
     def generate_message(self):
         while True:
+            if not self.alive:
+                return
             if self.simRole == "Sensor":
                 nextGen = self.get_next_time(2*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
@@ -335,8 +342,10 @@ class MeshNode:
                         break
             else:  # do not send this message anymore, since it is close to the end of the simulation
                 break
-
+        return
     def transmit(self, packet):
+        if not self.alive:
+            return
         with self.transmitter.request() as request:
             yield request
 
@@ -381,6 +390,8 @@ class MeshNode:
 
     def receive(self, in_pipe):
         while True:
+            if not self.alive:
+                return
             p = yield in_pipe.get()
             if p.sensedByN[self.nodeid] and not p.collidedAtN[self.nodeid] and p.onAirToN[self.nodeid]:  # start of reception
                 if not self.isTransmitting:
@@ -506,7 +517,9 @@ class MeshNode:
     
     def get_route_table(self):
         return {}
+    
+    def kill(self):
+        self.alive = False
+        self.verboseprint(f"Node {self.nodeid} has been killed.")
 # End of lib/node.py        
 
-#Todo:
-#packet missing issue is not with the sim time, it depends on any reason need to look into this tomorrow
