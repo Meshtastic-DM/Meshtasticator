@@ -22,6 +22,26 @@ class MeshNode_AODV(MeshNode):
         self.processed_rrep = set()  # Set to track processed RREPs to avoid loops
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
 
+    def log_next_hop_none(self, tag, pkt, extra=""):
+        self.verboseprint(
+            f"[{tag} NEXT_HOP_NONE]",
+            "time", round(self.env.now, 3),
+            "| node", self.nodeid,
+            "| seq", getattr(pkt, "seq", None),
+            "| orig", getattr(pkt, "origTxNodeId", None),
+            "| tx", getattr(pkt, "txNodeId", None),
+            "| dest", getattr(pkt, "destId", None),
+            "| isAck", getattr(pkt, "isAck", None),
+            "| wantAck", getattr(pkt, "wantAck", None),
+            "| is_rreq", getattr(pkt, "is_rreq", None),
+            "| is_rrep", getattr(pkt, "is_rrep", None),
+            "| is_rerr", getattr(pkt, "is_rerr", None),
+            "| hopLimit", getattr(pkt, "hopLimit", None),
+            "| hop_count", getattr(pkt, "hop_count", None),
+            "| rreq_id", getattr(pkt, "rreq_id", None),
+            "| extra", extra
+        )
+
     def send_packet(self, destId,data = None, wantAck=True,is_sdn_update=False):
         plen = 20
         self.seq_num += 1
@@ -37,6 +57,20 @@ class MeshNode_AODV(MeshNode):
                 pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
                 pNew.next_hop = self.routing_table[destId].nextHop if destId in self.routing_table else None
+                if pNew.next_hop is None:
+                    self.verboseprint(
+                        "[DATA SEND NEXT_HOP_NONE]",
+                        "time", round(self.env.now, 3),
+                        "| node", self.nodeid,
+                        "| seq", pNew.seq,
+                        "| dest", destId,
+                        "| route_exists", (destId in self.routing_table),
+                        "| valid", (self.routing_table[destId].valid if destId in self.routing_table else None),
+                        "| lifeTime", (self.routing_table[destId].lifeTime if destId in self.routing_table else None),
+                        "| now", self.env.now,
+                        "| entry_nextHop", (self.routing_table[destId].nextHop if destId in self.routing_table else None),
+                    )
+
                 self.packets.append(pNew)
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is sending packet', pNew.seq, 'to', pNew.destId, 'via next hop', self.routing_table[destId].nextHop)
                 self.env.process(self.transmit(pNew))
@@ -154,6 +188,20 @@ class MeshNode_AODV(MeshNode):
         rrep_packet.ttl = 64  # Initial TTL value for RREP
         rrep_packet.hopLimit =5
         rrep_packet.next_hop = self.routing_table.get(rreq_packet.origTxNodeId).nextHop if rreq_packet.origTxNodeId in self.routing_table else None
+        if rrep_packet.next_hop is None:
+            self.verboseprint(
+                "[RREP SEND NEXT_HOP_NONE]",
+                "time", round(self.env.now, 3),
+                "| node", self.nodeid,
+                "| rreq_origin", rreq_packet.origTxNodeId,
+                "| rreq_id", rreq_packet.rreq_id,
+                "| reverse_route_exists", (rreq_packet.origTxNodeId in self.routing_table),
+                "| reverse_valid", (self.routing_table[rreq_packet.origTxNodeId].valid if rreq_packet.origTxNodeId in self.routing_table else None),
+                "| reverse_nextHop", (self.routing_table[rreq_packet.origTxNodeId].nextHop if rreq_packet.origTxNodeId in self.routing_table else None),
+                "| rreq_txNodeId", getattr(rreq_packet, "txNodeId", None),
+                "| hint", "Reverse route missing/invalid => RREP can't go back",
+            )
+
         # Update routing table with forward route to the destination
         # self.routing_table[rreq_packet.origTxNodeId] = RouteEntry(
         #     destId=rreq_packet.origTxNodeId,
@@ -220,7 +268,24 @@ class MeshNode_AODV(MeshNode):
             fwd_packet.hop_count = packet.hop_count + 1
             fwd_packet.ttl = packet.ttl - 1
             fwd_packet.hopLimit = packet.hopLimit - 1
-            fwd_packet.next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None ###Changed Here
+            nextHop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None
+            if nextHop is None:
+                self.verboseprint(
+                    "[RREP FWD NEXT_HOP_NONE]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| rrep_seq", packet.seq,
+                    "| rreq_id", packet.rreq_id,
+                    "| rrep_dest(target)", packet.destId,
+                    "| route_exists", (packet.destId in self.routing_table),
+                    "| route_valid", (self.routing_table[packet.destId].valid if packet.destId in self.routing_table else None),
+                    "| route_nextHop", (self.routing_table[packet.destId].nextHop if packet.destId in self.routing_table else None),
+                    "| packet_next_hop_in", getattr(packet, "next_hop", None),
+                    "| packet_txNodeId", getattr(packet, "txNodeId", None),
+                    "| hint", "No route towards RREQ source => RREP will die here",
+                )
+            fwd_packet.next_hop = nextHop
+
             fwd_packet.txNodeId = self.nodeid
             self.packets.append(fwd_packet)
             self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREP
@@ -291,6 +356,20 @@ class MeshNode_AODV(MeshNode):
                         self.messages.append(MeshMessage(self.nodeid, packet.origTxNodeId, self.env.now, messageSeq))
                         ack_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, packet.origTxNodeId, self.nodeid, 10, messageSeq, self.env.now, False, True, packet.seq, self.env.now, self.verboseprint)
                         ack_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
+                        if ack_packet.next_hop is None:
+                            self.verboseprint(
+                                "[ACK SEND NEXT_HOP_NONE]",
+                                "time", round(self.env.now, 3),
+                                "| node", self.nodeid,
+                                "| ack_seq", ack_packet.seq,
+                                "| replying_to", packet.origTxNodeId,
+                                "| data_seq", packet.seq,
+                                "| reverse_route_exists", (packet.origTxNodeId in self.routing_table),
+                                "| reverse_valid", (self.routing_table[packet.origTxNodeId].valid if packet.origTxNodeId in self.routing_table else None),
+                                "| reverse_nextHop", (self.routing_table[packet.origTxNodeId].nextHop if packet.origTxNodeId in self.routing_table else None),
+                                "| hint", "No reverse route => ACK may get stuck",
+                            )
+
                         ack_packet.hopLimit = 10
                         self.packets.append(ack_packet)
                         self.env.process(self.transmit(ack_packet))
@@ -374,6 +453,24 @@ class MeshNode_AODV(MeshNode):
                     if packet.hopLimit >= 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
                             next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId != NODENUM_BROADCAST else None
+                            if packet.destId != NODENUM_BROADCAST and next_hop is None:
+                                self.verboseprint(
+                                    "[DATA FWD NEXT_HOP_NONE]",
+                                    "time", round(self.env.now, 3),
+                                    "| node", self.nodeid,
+                                    "| seq", packet.seq,
+                                    "| orig", packet.origTxNodeId,
+                                    "| rx_from", packet.txNodeId,
+                                    "| dest", packet.destId,
+                                    "| pkt_next_hop_in", getattr(packet, "next_hop", None),
+                                    "| route_exists", (packet.destId in self.routing_table),
+                                    "| route_valid", (self.routing_table[packet.destId].valid if packet.destId in self.routing_table else None),
+                                    "| route_nextHop", (self.routing_table[packet.destId].nextHop if packet.destId in self.routing_table else None),
+                                    "| hopLimit_in", getattr(packet, "hopLimit", None),
+                                    "| hop_count_in", getattr(packet, "hop_count", None),
+                                    "| hint", "Forwarding requested but route table has no nextHop",
+                                )
+
                             self.verboseprint('[DATA FWD] At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq, 'next hop', next_hop)
                             
                             pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
@@ -430,6 +527,17 @@ class MeshNode_AODV(MeshNode):
         return route_info
     
     def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 4000000):
+        if nextHop is None:
+            self.verboseprint(
+                "[ROUTE INSTALL NEXT_HOP_NONE]",
+                "time", round(self.env.now, 3),
+                "| node", self.nodeid,
+                "| dest", destId,
+                "| hopCount", hopCount,
+                "| destSeqNum", destSeqNum,
+                "| hint", "You are installing a broken route entry",
+            )
+
         self.routing_table[destId] = RouteEntry(
             destId=destId,
             nextHop=nextHop,
