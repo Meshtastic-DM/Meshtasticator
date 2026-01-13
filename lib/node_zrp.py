@@ -1574,7 +1574,7 @@ class MeshNode_ZRP(MeshNode):
                         )
 
                     # ------------ deliver to local app + generate ACK ------------
-                    if not packet.isAck and packet.wantAck:
+                    if not packet.isAck and packet.wantAck and packet.destId == self.nodeid:
                         self.messageSeq["val"] += 1
                         messageSeq = self.messageSeq["val"]
                         self.messages.append(

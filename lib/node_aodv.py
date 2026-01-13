@@ -285,7 +285,7 @@ class MeshNode_AODV(MeshNode):
                         self.handle_sdn_update(packet)
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'processed SDN update packet', packet.seq, 'from', packet.origTxNodeId)
                 elif packet.destId == self.nodeid or packet.destId == NODENUM_BROADCAST:
-                    if not packet.isAck and packet.wantAck:
+                    if not packet.isAck and packet.wantAck and packet.destId == self.nodeid:
                         self.messageSeq["val"] += 1
                         messageSeq = self.messageSeq["val"]
                         self.messages.append(MeshMessage(self.nodeid, packet.origTxNodeId, self.env.now, messageSeq))
