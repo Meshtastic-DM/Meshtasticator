@@ -295,7 +295,7 @@ class MeshNode_AODV(MeshNode):
                         self.packets.append(ack_packet)
                         self.env.process(self.transmit(ack_packet))
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent ACK for packet', packet.seq, 'to', packet.origTxNodeId)
-                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'from', packet.origTxNodeId)
+                    self.verboseprint('[DATA RECV] At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'from', packet.origTxNodeId)
                     if not packet.isAck:
                         orginTxNodeId = packet.origTxNodeId
                         for n in self.nodes:
@@ -374,7 +374,7 @@ class MeshNode_AODV(MeshNode):
                     if packet.hopLimit >= 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
                             next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId != NODENUM_BROADCAST else None
-                            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq, 'next hop', next_hop)
+                            self.verboseprint('[DATA FWD] At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasts received packet', packet.seq, 'next hop', next_hop)
                             
                             pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
                             pNew.hopLimit = packet.hopLimit - 1
