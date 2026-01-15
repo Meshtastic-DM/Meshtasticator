@@ -70,8 +70,9 @@ class MeshNode_SDN(MeshNode_AODV):
         super().update_routing_table(destId, nextHop, hopCount, destSeqNum, valid, pl, lifeTime)
 
     def send_sdn_route_update(self, controller_node_num, route_info_data):
-        self.send_packet(controller_node_num, data=route_info_data, is_sdn_update=True)
-        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent SDN route update to controller node', controller_node_num)
+        if controller_node_num is not None and self.simRole == "DM":
+            self.send_packet(controller_node_num, data=route_info_data, is_sdn_update=True)
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent SDN route update to controller node', controller_node_num)
 
     def handle_sdn_update(self, packet):
         if packet.seq in self.processed_sdn_update_packets:
@@ -110,7 +111,7 @@ class MeshNode_SDN(MeshNode_AODV):
                     pNew.is_sdn_update = packet.is_sdn_update
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
-                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarded SDN update packet', pNew.seq, 'towards', packet.destId)
+                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarded SDN update packet', pNew.seq, 'towards', packet.destId, 'with next hop', next_hop)
         if self.simRole == 'sdn_node' and  (packet.origTxNodeId != self.nodeid):
             route_info = packet.data
             self.write_adajecny_data_into_json(route_info)
