@@ -49,7 +49,7 @@ class MeshNode_SDN(MeshNode_AODV):
         self.sdn_node_num = None  # Node number of the SDN controller
         self.sdn_node_hop_count = None  # Hop count to the SDN controller
         self.processed_sdn_update_packets = set()  # Track processed SDN update packets to avoid duplicates
-        self.env.process(self.announce_sdn_node_periodically(interval = 15 * self.conf.ONE_MIN_INTERVAL) ) # Announce every 30 minutes
+       
 
     def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True, precursorList=None, lifeTime=300000):
         # Normalize precursorList to a serializable list
@@ -175,15 +175,4 @@ class MeshNode_SDN(MeshNode_AODV):
 
 
 
-    def broadcast_sdn_node_announcement(self):
-        if self.simRole != 'sdn_node':
-            return
-        
-        packet = self.send_packet(NODENUM_BROADCAST, data={}, is_sdn_update=True)
-        self.verboseprint('At time', round(self.env.now, 3), 'SDN controller node', self.nodeid, 'broadcasted SDN node announcement packet', packet.seq)
     
-    def announce_sdn_node_periodically(self, interval):
-        while True:
-            yield self.env.timeout(2*self.conf.TEN_SECONDS_INTERVAL)  # Initial delay to avoid immediate broadcast at time 0
-            self.broadcast_sdn_node_announcement()
-            yield self.env.timeout(interval)
