@@ -178,7 +178,7 @@ class MeshNode_SDN(MeshNode_AODV):
         # Pass the normalized precursor list to the base implementation
         super().update_routing_table(destId, nextHop, hopCount, destSeqNum, valid, pl, lifeTime)
 
-        if self.sdn_node_num is not None and self.simRole != 'sdn_node' and hopCount <=2:
+        if self.sdn_node_num is not None and self.simRole != 'sdn_node' and hopCount <=2 and destId != self.sdn_node_num:
             route_info_data = {
                 'selfId': self.nodeid,
                 'destId': destId,
@@ -292,7 +292,7 @@ class MeshNode_SDN(MeshNode_AODV):
                     entry = self.routing_table.get(self.sdn_node_num)
                     entry_seq = entry.destSeqNum if entry is not None else -1
                     if packet.seq > entry_seq:
-                        updated = True
+                        self.update_routing_table(self.sdn_node_num, packet.txNodeId, packet.hop_count+1, packet.seq, valid=True)
         if updated:
             self.update_routing_table(self.sdn_node_num, packet.txNodeId, packet.hop_count+1, packet.seq, valid=True)
             '''for dest_id in self.routing_table.keys():
