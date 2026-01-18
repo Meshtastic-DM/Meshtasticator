@@ -202,6 +202,7 @@ class MeshNode_SDN(MeshNode_AODV):
                 "| to controller", controller_node_num,
                 "| seq", p.seq,
                 "| wantAck", p.wantAck,
+                "| destSeqNum", route_info_data.get("destSeqNum"),
             )
             # Only start retransmission for unicast updates that want ACK
             if p.wantAck:
