@@ -354,6 +354,7 @@ class MeshNode_AODV(MeshNode):
                         self.messageSeq["val"] += 1
                         messageSeq = self.messageSeq["val"]
                         self.messages.append(MeshMessage(self.nodeid, packet.origTxNodeId, self.env.now, messageSeq))
+                        self.update_routing_table(packet.origTxNodeId, packet.txNodeId, packet.hop_count + 1, packet.seq)
                         ack_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, packet.origTxNodeId, self.nodeid, 10, messageSeq, self.env.now, False, True, packet.seq, self.env.now, self.verboseprint)
                         ack_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
                         if ack_packet.next_hop is None:
@@ -452,7 +453,7 @@ class MeshNode_AODV(MeshNode):
                 else:
                     if packet.hopLimit >= 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
-                            next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId != NODENUM_BROADCAST else None
+                            next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None
                             if packet.destId != NODENUM_BROADCAST and next_hop is None:
                                 self.verboseprint(
                                     "[DATA FWD NEXT_HOP_NONE]",
