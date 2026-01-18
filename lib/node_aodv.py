@@ -25,6 +25,8 @@ class MeshNode_AODV(MeshNode):
         self.processed_rreq = set()  # Set to track processed RREQs to avoid loops
         self.processed_rrep = set()  # Set to track processed RREPs to avoid loops
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
+
+        self.sdn_node_num = None  # Node number of the SDN controller
         
     
     def aodv_reliable_retransmit(self, p):
@@ -151,7 +153,7 @@ class MeshNode_AODV(MeshNode):
         p.is_sdn_update = is_sdn_update
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId,'is_sdn_update:',is_sdn_update)
         if destId != NODENUM_BROADCAST:
-            if destId in self.routing_table and self.routing_table[destId].valid and self.routing_table[destId].lifeTime > self.env.now:
+            if destId in self.routing_table and self.routing_table[destId].valid and (self.routing_table[destId].lifeTime > self.env.now or destId == self.sdn_node_num):
                 pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
                 pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
