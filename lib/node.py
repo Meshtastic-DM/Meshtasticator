@@ -252,7 +252,7 @@ class MeshNode:
                 self.numberOfBroadcastPacketsCreated += 1
 
             if self.simRole == "sdn_node":
-                p = self.send_packet(NODENUM_BROADCAST, data={}, wantAck=False, is_sdn_update=True)
+                p = self.send_packet(NODENUM_BROADCAST, data={}, wantAck=True, is_sdn_update=True)
             else:
                 p = self.send_packet(destId)
             while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
