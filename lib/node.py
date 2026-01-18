@@ -273,9 +273,75 @@ class MeshNode:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
                         if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV:
                             ############ AODV version ############
-                            pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
+                            if getattr(p, "queued_no_route", False):
+                                break   # next message generation cycle
+
+                            # Re-evaluate next hop (route may have changed since first send)
+                            nh = None
+                            entry = self.routing_table.get(p.destId)
+                            if entry is not None and entry.valid and entry.lifeTime > self.env.now:
+                                nh = entry.nextHop
+
+                            if nh is None:
+                                self.verboseprint(
+                                    "[AODV GEN RETX EXIT NO ROUTE]",
+                                    "time", round(self.env.now, 3),
+                                    "| node", self.nodeid,
+                                    "| seq", p.seq,
+                                    "| dest", p.destId,
+                                    "| reason",
+                                    ("NO_ENTRY" if entry is None else
+                                    "INVALID" if not entry.valid else
+                                    "EXPIRED" if entry.lifeTime <= self.env.now else
+                                    "NEXT_HOP_NONE"),
+                                )
+                                break
+
+                            pNew = MeshPacket_AODV(
+                                self.conf, self.nodes,
+                                self.nodeid,       # origTxNodeId
+                                p.destId,
+                                self.nodeid,       # txNodeId
+                                p.packetLen,
+                                p.seq,
+                                p.genTime,
+                                p.wantAck,
+                                False,             # isAck
+                                None,              # requestId
+                                self.env.now,
+                                self.verboseprint,
+                                data=getattr(p, "data", None),
+                                hop_count=getattr(p, "hop_count", 0),
+                                ttl=getattr(p, "ttl", 64),
+                                rreq_id=getattr(p, "rreq_id", None),
+                            )
+
+                            # Carry hopLimit if you use it elsewhere in your sim
+                            if hasattr(p, "hopLimit"):
+                                pNew.hopLimit = getattr(p, "hopLimit", 0)
+
+                            # Preserve AODV flags/payload markers
+                            pNew.is_rreq = getattr(p, "is_rreq", False)
+                            pNew.is_rrep = getattr(p, "is_rrep", False)
+                            pNew.is_rerr = getattr(p, "is_rerr", False)
+                            pNew.is_sdn_update = getattr(p, "is_sdn_update", False)
+
+                            # ✅ the missing piece
+                            pNew.next_hop = nh
+
+                            # Retry budget
                             pNew.retransmissions = minRetransmissions - 1
-                            self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
+
+                            self.verboseprint(
+                                round(self.env.now, 3),
+                                "[AODV GEN RETX SEND]",
+                                "Node", self.nodeid,
+                                "| dest", p.destId,
+                                "| seq", p.seq,
+                                "| remaining", pNew.retransmissions,
+                                "| next_hop", pNew.next_hop,
+                            )
+
                             self.packets.append(pNew)
                             self.env.process(self.transmit(pNew))
                         elif self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.ZRP:
