@@ -1,6 +1,10 @@
 from lib.node_aodv import MeshNode_AODV
 import json
 import os
+from lib.common import calc_dist, find_random_position
+from lib.mac import set_transmit_delay, get_retransmission_msec
+from lib.packet_aodv import MeshPacket_AODV
+from lib.phy import check_collision, is_channel_active, airtime
 from lib.packet import NODENUM_BROADCAST
 from lib.packet_aodv import MeshPacket_AODV
 # cross-platform file locking: prefer fcntl (Unix), fall back to msvcrt (Windows),
@@ -49,12 +53,132 @@ class MeshNode_SDN(MeshNode_AODV):
         self.sdn_node_num = None  # Node number of the SDN controller
         self.sdn_node_hop_count = None  # Hop count to the SDN controller
         self.processed_sdn_update_packets = set()  # Track processed SDN update packets to avoid duplicates
-        self.env.process(self.announce_sdn_node_periodically(interval = 15 * self.conf.ONE_MIN_INTERVAL) ) # Announce every 30 minutes
+       
+
+    
+
+    def aodv_reliable_retransmit(self, p):
+        """
+        Retransmit logic for AODV unicast packets that wantAck.
+        Stops when ACK is observed in self.packets, or retries exhausted.
+        IMPORTANT: p must be the "original" packet (same seq) that we track.
+        """
+        if not getattr(p, "wantAck", False):
+            return
+
+        # Don't retransmit broadcasts
+        if p.destId == NODENUM_BROADCAST:
+            return
+
+        # Max retry count (how many *additional* attempts after first send)
+        max_retx = getattr(self.conf, "maxRetransmission", 3)
+
+        # We count remaining retx attempts in the packet object (optional)
+        remaining = getattr(p, "retransmissions", max_retx)
+        p.retransmissions = remaining
+
+        while p.wantAck:
+            # Wait before checking/retrying
+            retransmissionMsec = get_retransmission_msec(self, p)
+            yield self.env.timeout(retransmissionMsec)
+
+            # Check if ack already received for this packet seq
+            ack_received = False
+
+            # Look through sent packets and see if any entry for this seq got acked
+            for packetSent in self.packets:
+                if packetSent.origTxNodeId == self.nodeid and packetSent.seq == p.seq:
+                    if getattr(packetSent, "ackReceived", False):
+                        ack_received = True
+                        break
+
+            if ack_received:
+                self.verboseprint(
+                    "[AODV RETX EXIT ACK]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                )
+                break
+
+            # No ACK → retransmit if we still have retries
+            if p.retransmissions > 0:
+                # Must re-evaluate next hop (route might have changed)
+                nh = None
+                if p.destId in self.routing_table and self.routing_table[p.destId].valid:
+                    nh = self.routing_table[p.destId].nextHop
+
+                # If no route now, stop (or you can trigger a new RREQ)
+                if nh is None:
+                    self.verboseprint(
+                        "[AODV RETX EXIT NO ROUTE]",
+                        "time", round(self.env.now, 3),
+                        "| node", self.nodeid,
+                        "| seq", p.seq,
+                        "| dest", p.destId,
+                    )
+                    break
+
+                pNew = MeshPacket_AODV(
+                    self.conf, self.nodes,
+                    p.origTxNodeId, p.destId,
+                    self.nodeid,              # txNodeId = me
+                    p.packetLen,
+                    p.seq,
+                    p.genTime,
+                    p.wantAck,
+                    False,                    # isAck
+                    getattr(p, "rreq_id", None),
+                    self.env.now,
+                    self.verboseprint,
+                    data=getattr(p, "data", None),
+                    rreq_id=getattr(p, "rreq_id", None)
+                )
+
+                # Copy fields used by your forwarding logic
+                pNew.hopLimit = getattr(p, "hopLimit", 10)
+                pNew.next_hop = nh
+                pNew.hop_count = getattr(p, "hop_count", 0)
+                pNew.ttl = getattr(p, "ttl", 64)
+                pNew.is_rreq = getattr(p, "is_rreq", False)
+                pNew.is_rrep = getattr(p, "is_rrep", False)
+                pNew.is_rerr = getattr(p, "is_rerr", False)
+                pNew.is_sdn_update = getattr(p, "is_sdn_update", False)
+
+                # decrement remaining attempts
+                p.retransmissions -= 1
+                pNew.retransmissions = p.retransmissions
+
+                self.verboseprint(
+                    "[AODV RETX SEND]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                    "| remaining", pNew.retransmissions,
+                    "| next_hop", nh,
+                )
+
+                self.packets.append(pNew)
+                self.env.process(self.transmit(pNew))
+
+            else:
+                self.verboseprint(
+                    "[AODV RETX EXIT FAIL]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                )
+                break
 
     def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True, precursorList=None, lifeTime=300000):
+        
         # Normalize precursorList to a serializable list
         pl = precursorList if precursorList is not None else []
-        if self.sdn_node_num is not None and self.simRole != 'sdn_node' and hopCount <=2:
+
+        # Pass the normalized precursor list to the base implementation
+        super().update_routing_table(destId, nextHop, hopCount, destSeqNum, valid, pl, lifeTime)
+
+        if self.sdn_node_num is not None and self.simRole != 'sdn_node' and hopCount <=2 and destId != self.sdn_node_num:
             route_info_data = {
                 'selfId': self.nodeid,
                 'destId': destId,
@@ -66,15 +190,43 @@ class MeshNode_SDN(MeshNode_AODV):
                 'lifeTime': lifeTime
             }
             self.send_sdn_route_update(self.sdn_node_num, route_info_data)
-        # Pass the normalized precursor list to the base implementation
-        super().update_routing_table(destId, nextHop, hopCount, destSeqNum, valid, pl, lifeTime)
+        
 
     def send_sdn_route_update(self, controller_node_num, route_info_data):
-        self.send_packet(controller_node_num, data=route_info_data, is_sdn_update=True)
-        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'sent SDN route update to controller node', controller_node_num)
+        if controller_node_num is not None and self.simRole == "DM":
+            p = self.send_packet(controller_node_num, data=route_info_data, is_sdn_update=True)
+            self.verboseprint(
+                "[SDN UPDATE SEND]",
+                "time", round(self.env.now, 3),
+                "| node", self.nodeid,
+                "| to controller", controller_node_num,
+                "| seq", p.seq,
+                "| wantAck", p.wantAck,
+            )
+            # Only start retransmission for unicast updates that want ACK
+            if p.wantAck:
+                self.env.process(self.aodv_reliable_retransmit(p))
+                self.verboseprint(
+                    "[SDN UPDATE RELIABLE START]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                    "| maxRetx", getattr(self.conf, "maxRetransmission", None),
+                )
+
 
     def handle_sdn_update(self, packet):
-        if packet.seq in self.processed_sdn_update_packets:
+        self.verboseprint(
+            "[SDN UPDATE RX]",
+            "time", round(self.env.now, 3),
+            "| node", self.nodeid,
+            "| from", packet.origTxNodeId,
+            "| seq", packet.seq,
+            "| hop", packet.hop_count,
+        )
+        if packet.seq in self.processed_sdn_update_packets and packet.destId == NODENUM_BROADCAST:
+            return  # Skip already processed packets
+        if packet.seq in self.processed_sdn_update_packets and packet.destId == self.nodeid:
             return  # Skip already processed packets
         self.processed_sdn_update_packets.add(packet.seq)
         if self.simRole != 'sdn_node':
@@ -97,7 +249,17 @@ class MeshNode_SDN(MeshNode_AODV):
             elif packet.destId != self.nodeid:
                 if not self.isClientMute and self.nodeid == packet.next_hop:
                     # Forward the packet towards its destination
-                    next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId else None
+                    entry = self.routing_table.get(packet.destId)
+                    next_hop = entry.nextHop if entry else None
+
+                    if next_hop is None:
+                        self.verboseprint(
+                            "[SDN NH NONE]",
+                            "time", round(self.env.now, 3),
+                            "| node", self.nodeid,
+                            "| seq", packet.seq,
+                            "| dest", packet.destId,
+                        )
                     pNew = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, packet.packetLen, packet.seq, packet.genTime, packet.wantAck, packet.isAck, packet.rreq_id, self.env.now, self.verboseprint)
                     pNew.hopLimit = packet.hopLimit -1
                     pNew.next_hop = next_hop
@@ -110,7 +272,14 @@ class MeshNode_SDN(MeshNode_AODV):
                     pNew.is_sdn_update = packet.is_sdn_update
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
-                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarded SDN update packet', pNew.seq, 'towards', packet.destId)
+                    self.verboseprint(
+                        "[SDN UPDATE FWD]",
+                        "time", round(self.env.now, 3),
+                        "| node", self.nodeid,
+                        "| seq", pNew.seq,
+                        "| dest", pNew.destId,
+                        "| next_hop", next_hop,
+                    )
         if self.simRole == 'sdn_node' and  (packet.origTxNodeId != self.nodeid):
             route_info = packet.data
             self.write_adajecny_data_into_json(route_info)
@@ -145,21 +314,124 @@ class MeshNode_SDN(MeshNode_AODV):
                 _unlock(f)
 
     def update_sdn_configuration(self, packet):
+        self.verboseprint(
+            "[SDN CFG RX]",
+            "time", round(self.env.now, 3),
+            "| node", self.nodeid,
+            "| from", packet.origTxNodeId,
+            "| hop", packet.hop_count,
+            "| seq", packet.seq,
+            "| current_ctrl", self.sdn_node_num,
+            "| current_hop", self.sdn_node_hop_count,
+        )
+
         updated = False
+        reason = None
+
         if self.sdn_node_num is None:
             self.sdn_node_num = packet.origTxNodeId
             self.sdn_node_hop_count = packet.hop_count
-            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'set SDN controller to node', self.sdn_node_num, 'at hop count', self.sdn_node_hop_count)
             updated = True
+            reason = "FIRST_SET"
+
+            self.verboseprint(
+                "[SDN CFG UPDATE]",
+                "time", round(self.env.now, 3),
+                "| node", self.nodeid,
+                "| reason", reason,
+                "| controller", self.sdn_node_num,
+                "| hop", self.sdn_node_hop_count,
+                "| seq", packet.seq,
+            )
+
         else:
+            # Better hop-count controller
             if packet.hop_count < self.sdn_node_hop_count:
+                old_ctrl = self.sdn_node_num
+                old_hop = self.sdn_node_hop_count
+
                 self.sdn_node_num = packet.origTxNodeId
                 self.sdn_node_hop_count = packet.hop_count
-                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated SDN controller to node', self.sdn_node_num, 'at hop count', self.sdn_node_hop_count)
                 updated = True
+                reason = "BETTER_HOP"
+
+                self.verboseprint(
+                    "[SDN CFG UPDATE]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| reason", reason,
+                    "| old_ctrl", old_ctrl,
+                    "| old_hop", old_hop,
+                    "| new_ctrl", self.sdn_node_num,
+                    "| new_hop", self.sdn_node_hop_count,
+                    "| seq", packet.seq,
+                )
+
+            else:
+                # Same controller, newer seq than current route entry -> update route info
+                if packet.origTxNodeId == self.sdn_node_num:
+                    entry = self.routing_table.get(self.sdn_node_num)
+                    entry_seq = entry.destSeqNum if entry is not None else -1
+
+                    if packet.seq > entry_seq:
+                        updated = True
+                        reason = "NEWER_SEQ"
+
+                        self.verboseprint(
+                            "[SDN CFG UPDATE]",
+                            "time", round(self.env.now, 3),
+                            "| node", self.nodeid,
+                            "| reason", reason,
+                            "| controller", self.sdn_node_num,
+                            "| pkt_seq", packet.seq,
+                            "| entry_seq", entry_seq,
+                            "| hop", packet.hop_count,
+                        )
+                    else:
+                        self.verboseprint(
+                            "[SDN CFG IGNORE]",
+                            "time", round(self.env.now, 3),
+                            "| node", self.nodeid,
+                            "| reason", "OLD_SEQ",
+                            "| controller", self.sdn_node_num,
+                            "| pkt_seq", packet.seq,
+                            "| entry_seq", entry_seq,
+                            "| hop", packet.hop_count,
+                        )
+                else:
+                    self.verboseprint(
+                        "[SDN CFG IGNORE]",
+                        "time", round(self.env.now, 3),
+                        "| node", self.nodeid,
+                        "| reason", "DIFFERENT_CTRL",
+                        "| pkt_ctrl", packet.origTxNodeId,
+                        "| current_ctrl", self.sdn_node_num,
+                        "| pkt_hop", packet.hop_count,
+                        "| current_hop", self.sdn_node_hop_count,
+                    )
+
         if updated:
-            self.update_routing_table(self.sdn_node_num, packet.txNodeId, packet.hop_count+1, packet.seq, valid=True)
-            for dest_id in self.routing_table.keys():
+            self.update_routing_table(
+                self.sdn_node_num,
+                packet.txNodeId,
+                packet.hop_count + 1,
+                packet.seq,
+                valid=True
+            )
+
+            # log route install
+            self.verboseprint(
+                "[SDN CFG ROUTE SET]",
+                "time", round(self.env.now, 3),
+                "| node", self.nodeid,
+                "| ctrl", self.sdn_node_num,
+                "| nextHop", packet.txNodeId,
+                "| hopCount", packet.hop_count + 1,
+                "| seq", packet.seq,
+                "| reason", reason,
+            )
+
+            '''for dest_id in self.routing_table.keys():
                 if self.routing_table[dest_id].hopCount == 1:
                     route_info_data = {
                     'selfId': self.nodeid,
@@ -171,19 +443,8 @@ class MeshNode_SDN(MeshNode_AODV):
                     'precursorList': self.routing_table[dest_id].precursorList,
                     'lifeTime': self.routing_table[dest_id].lifeTime
                     }
-                    self.send_sdn_route_update(self.sdn_node_num, route_info_data)
+                    self.send_sdn_route_update(self.sdn_node_num, route_info_data)'''
 
 
 
-    def broadcast_sdn_node_announcement(self):
-        if self.simRole != 'sdn_node':
-            return
-        
-        packet = self.send_packet(NODENUM_BROADCAST, data={}, is_sdn_update=True)
-        self.verboseprint('At time', round(self.env.now, 3), 'SDN controller node', self.nodeid, 'broadcasted SDN node announcement packet', packet.seq)
     
-    def announce_sdn_node_periodically(self, interval):
-        while True:
-            yield self.env.timeout(2*self.conf.TEN_SECONDS_INTERVAL)  # Initial delay to avoid immediate broadcast at time 0
-            self.broadcast_sdn_node_announcement()
-            yield self.env.timeout(interval)
