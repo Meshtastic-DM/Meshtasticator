@@ -57,7 +57,7 @@ class MeshNode_SDN(MeshNode_AODV):
 
     
 
-    def aodv_reliable_retransmit(self, p):
+    def sdn_reliable_retransmit(self, p):
         """
         Retransmit logic for AODV unicast packets that wantAck.
         Stops when ACK is observed in self.packets, or retries exhausted.
@@ -94,10 +94,11 @@ class MeshNode_SDN(MeshNode_AODV):
 
             if ack_received:
                 self.verboseprint(
-                    "[AODV RETX EXIT ACK]",
+                    "[SDN RETX EXIT ACK]",
                     "time", round(self.env.now, 3),
                     "| node", self.nodeid,
                     "| seq", p.seq,
+                    "| destSeqNum", p.data.get("destSeqNum"),
                 )
                 break
 
@@ -111,7 +112,7 @@ class MeshNode_SDN(MeshNode_AODV):
                 # If no route now, stop (or you can trigger a new RREQ)
                 if nh is None:
                     self.verboseprint(
-                        "[AODV RETX EXIT NO ROUTE]",
+                        "[SDN RETX EXIT NO ROUTE]",
                         "time", round(self.env.now, 3),
                         "| node", self.nodeid,
                         "| seq", p.seq,
@@ -150,7 +151,7 @@ class MeshNode_SDN(MeshNode_AODV):
                 pNew.retransmissions = p.retransmissions
 
                 self.verboseprint(
-                    "[AODV RETX SEND]",
+                    "[SDN RETX SEND]",
                     "time", round(self.env.now, 3),
                     "| node", self.nodeid,
                     "| seq", p.seq,
@@ -163,10 +164,11 @@ class MeshNode_SDN(MeshNode_AODV):
 
             else:
                 self.verboseprint(
-                    "[AODV RETX EXIT FAIL]",
+                    "[SDN RETX EXIT FAIL]",
                     "time", round(self.env.now, 3),
                     "| node", self.nodeid,
                     "| seq", p.seq,
+                    "| destSeqNum", p.data.get("destSeqNum"),
                 )
                 break
 
@@ -206,7 +208,7 @@ class MeshNode_SDN(MeshNode_AODV):
             )
             # Only start retransmission for unicast updates that want ACK
             if p.wantAck:
-                self.env.process(self.aodv_reliable_retransmit(p))
+                self.env.process(self.sdn_reliable_retransmit(p))
                 self.verboseprint(
                     "[SDN UPDATE RELIABLE START]",
                     "time", round(self.env.now, 3),
