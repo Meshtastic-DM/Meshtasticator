@@ -244,8 +244,17 @@ class MeshNode:
                     self.numberOfDMPacketsCreated[destId] = 0
                 self.numberOfDMPacketsCreated[destId] += 1
             elif self.simRole == "sdn_node":
-                return
-            p = self.send_packet(destId)
+                nextGen = self.get_next_time(15*60*1000)
+                if nextGen < 0:  # do not generate message near the end of the simulation
+                    break
+                yield self.env.timeout(nextGen)
+                destId = NODENUM_BROADCAST
+                self.numberOfBroadcastPacketsCreated += 1
+
+            if self.simRole == "sdn_node":
+                p = self.send_packet(NODENUM_BROADCAST, data={}, wantAck=False, is_sdn_update=True)
+            else:
+                p = self.send_packet(destId)
             while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
                 retransmissionMsec = get_retransmission_msec(self, p)
                 yield self.env.timeout(retransmissionMsec)
