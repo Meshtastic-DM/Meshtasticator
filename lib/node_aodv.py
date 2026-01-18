@@ -195,7 +195,10 @@ class MeshNode_AODV(MeshNode):
             pNew.is_rreq = p.is_rreq
             pNew.hop_count = p.hop_count
             self.packets.append(pNew)
-            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'broadcasting packet', pNew.seq)
+            if self.simRole == "sdn_node":
+                self.verboseprint('At time', round(self.env.now, 3), 'SDN controller node', self.nodeid, 'broadcasted SDN node announcement packet', pNew.seq)
+            else:
+                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'broadcasting packet', pNew.seq)
             self.env.process(self.transmit(pNew))
         #self.messages.append(MeshMessage(self.nodeid, destId, self.env.now, messageSeq))
         return p
