@@ -3,6 +3,10 @@ from    lib.packet_aodv import MeshPacket_AODV
 from    lib.packet import NODENUM_BROADCAST, MeshMessage
 import  simpy
 import  random
+from lib.common import calc_dist, find_random_position
+from lib.mac import set_transmit_delay, get_retransmission_msec
+from lib.packet_aodv import MeshPacket_AODV
+from lib.phy import check_collision, is_channel_active, airtime
 
 class MeshNode_AODV(MeshNode):
     """
@@ -21,26 +25,121 @@ class MeshNode_AODV(MeshNode):
         self.processed_rreq = set()  # Set to track processed RREQs to avoid loops
         self.processed_rrep = set()  # Set to track processed RREPs to avoid loops
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
+        
+    
+    def aodv_reliable_retransmit(self, p):
+        """
+        Retransmit logic for AODV unicast packets that wantAck.
+        Stops when ACK is observed in self.packets, or retries exhausted.
+        IMPORTANT: p must be the "original" packet (same seq) that we track.
+        """
+        if not getattr(p, "wantAck", False):
+            return
 
-    def log_next_hop_none(self, tag, pkt, extra=""):
-        self.verboseprint(
-            f"[{tag} NEXT_HOP_NONE]",
-            "time", round(self.env.now, 3),
-            "| node", self.nodeid,
-            "| seq", getattr(pkt, "seq", None),
-            "| orig", getattr(pkt, "origTxNodeId", None),
-            "| tx", getattr(pkt, "txNodeId", None),
-            "| dest", getattr(pkt, "destId", None),
-            "| isAck", getattr(pkt, "isAck", None),
-            "| wantAck", getattr(pkt, "wantAck", None),
-            "| is_rreq", getattr(pkt, "is_rreq", None),
-            "| is_rrep", getattr(pkt, "is_rrep", None),
-            "| is_rerr", getattr(pkt, "is_rerr", None),
-            "| hopLimit", getattr(pkt, "hopLimit", None),
-            "| hop_count", getattr(pkt, "hop_count", None),
-            "| rreq_id", getattr(pkt, "rreq_id", None),
-            "| extra", extra
-        )
+        # Don't retransmit broadcasts
+        if p.destId == NODENUM_BROADCAST:
+            return
+
+        # Max retry count (how many *additional* attempts after first send)
+        max_retx = getattr(self.conf, "maxRetransmission", 3)
+
+        # We count remaining retx attempts in the packet object (optional)
+        remaining = getattr(p, "retransmissions", max_retx)
+        p.retransmissions = remaining
+
+        while p.wantAck:
+            # Wait before checking/retrying
+            retransmissionMsec = get_retransmission_msec(self, p)
+            yield self.env.timeout(retransmissionMsec)
+
+            # Check if ack already received for this packet seq
+            ack_received = False
+
+            # Look through sent packets and see if any entry for this seq got acked
+            for packetSent in self.packets:
+                if packetSent.origTxNodeId == self.nodeid and packetSent.seq == p.seq:
+                    if getattr(packetSent, "ackReceived", False):
+                        ack_received = True
+                        break
+
+            if ack_received:
+                self.verboseprint(
+                    "[AODV RETX EXIT ACK]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                )
+                break
+
+            # No ACK → retransmit if we still have retries
+            if p.retransmissions > 0:
+                # Must re-evaluate next hop (route might have changed)
+                nh = None
+                if p.destId in self.routing_table and self.routing_table[p.destId].valid:
+                    nh = self.routing_table[p.destId].nextHop
+
+                # If no route now, stop (or you can trigger a new RREQ)
+                if nh is None:
+                    self.verboseprint(
+                        "[AODV RETX EXIT NO ROUTE]",
+                        "time", round(self.env.now, 3),
+                        "| node", self.nodeid,
+                        "| seq", p.seq,
+                        "| dest", p.destId,
+                    )
+                    break
+
+                pNew = MeshPacket_AODV(
+                    self.conf, self.nodes,
+                    p.origTxNodeId, p.destId,
+                    self.nodeid,              # txNodeId = me
+                    p.packetLen,
+                    p.seq,
+                    p.genTime,
+                    p.wantAck,
+                    False,                    # isAck
+                    getattr(p, "rreq_id", None),
+                    self.env.now,
+                    self.verboseprint,
+                    data=getattr(p, "data", None),
+                    rreq_id=getattr(p, "rreq_id", None)
+                )
+
+                # Copy fields used by your forwarding logic
+                pNew.hopLimit = getattr(p, "hopLimit", 10)
+                pNew.next_hop = nh
+                pNew.hop_count = getattr(p, "hop_count", 0)
+                pNew.ttl = getattr(p, "ttl", 64)
+                pNew.is_rreq = getattr(p, "is_rreq", False)
+                pNew.is_rrep = getattr(p, "is_rrep", False)
+                pNew.is_rerr = getattr(p, "is_rerr", False)
+                pNew.is_sdn_update = getattr(p, "is_sdn_update", False)
+
+                # decrement remaining attempts
+                p.retransmissions -= 1
+                pNew.retransmissions = p.retransmissions
+
+                self.verboseprint(
+                    "[AODV RETX SEND]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                    "| remaining", pNew.retransmissions,
+                    "| next_hop", nh,
+                )
+
+                self.packets.append(pNew)
+                self.env.process(self.transmit(pNew))
+
+            else:
+                self.verboseprint(
+                    "[AODV RETX EXIT FAIL]",
+                    "time", round(self.env.now, 3),
+                    "| node", self.nodeid,
+                    "| seq", p.seq,
+                )
+                break
+
 
     def send_packet(self, destId,data = None, wantAck=True,is_sdn_update=False):
         plen = 20
@@ -77,6 +176,7 @@ class MeshNode_AODV(MeshNode):
             else:
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'no valid route to', destId, 'initiating route discovery')
                 # Initiate route discovery
+                p.queued_no_route = True
                 self.initiate_route_discovery(destId)
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is initiating route discovery for', destId)
                 # Store the packet to be sent once the route is discovered
@@ -256,6 +356,7 @@ class MeshNode_AODV(MeshNode):
                     pNew.next_hop = self.routing_table.get(p.destId).nextHop if p.destId in self.routing_table else None
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
+                    self.env.process(self.aodv_reliable_retransmit(pNew))
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'transmitted pending packet', pNew.seq, 'to', pNew.destId)
                 del self.pending_rreq[key]
         elif packet.hopLimit > 1 and packet.next_hop == self.nodeid:
