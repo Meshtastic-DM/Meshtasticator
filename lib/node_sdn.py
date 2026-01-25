@@ -53,9 +53,62 @@ class MeshNode_SDN(MeshNode_AODV):
         self.sdn_node_num = None  # Node number of the SDN controller
         self.sdn_node_hop_count = None  # Hop count to the SDN controller
         self.processed_sdn_update_packets = set()  # Track processed SDN update packets to avoid duplicates
-       
 
-    
+        self.route_db = {}   # key: (selfId, destId) -> latest entry
+        self.env.process(self.sdn_tick())
+
+       
+    def upsert_route_db(self, info):
+        # sanitize
+        selfId = info.get("selfId")
+        destId = info.get("destId")
+        if selfId is None or destId is None:
+            return
+
+        key = (selfId, destId)
+
+        # If sender didn’t include expires_at, compute it using SDN receive time
+        if "expires_at" not in info:
+            lt = info.get("lifetime") or info.get("lifeTime") or 0
+            info["expires_at"] = self.env.now + lt
+        if "updated_at" not in info:
+            info["updated_at"] = self.env.now
+
+        old = self.route_db.get(key)
+        if old is None:
+            self.route_db[key] = info
+            return
+
+        # choose newest/best update (seq number first)
+        old_seq = old.get("destSeqNum", -1)
+        new_seq = info.get("destSeqNum", -1)
+
+        if new_seq > old_seq:
+            self.route_db[key] = info
+        elif new_seq == old_seq:
+            # same seq: keep the most recent update
+            if info.get("updated_at", 0) >= old.get("updated_at", 0):
+                self.route_db[key] = info
+
+    def sdn_tick(self):
+        while True:
+            yield self.env.timeout(60_000)   # 1 minute (your sim uses ms)
+            now = self.env.now
+
+            # purge expired / invalid
+            dead = [k for k,v in self.route_db.items()
+                    if (not v.get("valid", True)) or (v.get("expires_at", 0) <= now)]
+            for k in dead:
+                del self.route_db[k]
+
+            self.write_route_db_json()
+
+
+    def write_route_db_json(self):
+        path = "sdn_route_db.json"
+        data = list(self.route_db.values())
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
 
     def sdn_reliable_retransmit(self, p):
         """
@@ -172,7 +225,7 @@ class MeshNode_SDN(MeshNode_AODV):
                 )
                 break
 
-    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True, precursorList=None, lifeTime=300000):
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True, precursorList=None, lifeTime=4000000):
         
         # Normalize precursorList to a serializable list
         pl = precursorList if precursorList is not None else []
@@ -181,6 +234,7 @@ class MeshNode_SDN(MeshNode_AODV):
         super().update_routing_table(destId, nextHop, hopCount, destSeqNum, valid, pl, lifeTime)
 
         if self.sdn_node_num is not None and self.simRole != 'sdn_node' and hopCount <=7 and destId != self.sdn_node_num:
+            expires_at = self.env.now + lifeTime   # absolute expiry time in sim ms
             route_info_data = {
                 'selfId': self.nodeid,
                 'destId': destId,
@@ -189,7 +243,9 @@ class MeshNode_SDN(MeshNode_AODV):
                 'destSeqNum': destSeqNum,
                 'valid': valid,
                 'precursorList': pl,
-                'lifeTime': lifeTime
+                'lifeTime': lifeTime,
+                'expires_at': expires_at,     # ADD THIS
+                'updated_at': self.env.now    # ADD THIS (controller uses it)
             }
             self.send_sdn_route_update(self.sdn_node_num, route_info_data)
         
@@ -286,6 +342,7 @@ class MeshNode_SDN(MeshNode_AODV):
         if self.simRole == 'sdn_node' and  (packet.origTxNodeId != self.nodeid):
             route_info = packet.data
             self.write_adajecny_data_into_json(route_info)
+            self.upsert_route_db(route_info)   # NEW
             self.verboseprint('At time', round(self.env.now, 3), 'controller node', self.nodeid, 'updated routing info from SDN packet', packet.seq, 'from', packet.origTxNodeId)
     
     def write_adajecny_data_into_json(self, route_info):
