@@ -288,6 +288,8 @@ class MeshNode_ZRP(MeshNode):
         P2 = getattr(self.conf, "IARP_PERIOD_MSEC_PHASE2", 30 * 60 * 1000)  # default 5 min
 
         while True:
+            if not self.alive:
+                return
             # choose period based on current sim time
             period = P1 if self.env.now < SWITCH_MS else P2
 
@@ -388,6 +390,8 @@ class MeshNode_ZRP(MeshNode):
         but triggered for queued packets once a route exists.
         """
         while p.wantAck:
+            if not self.alive:
+                return
             retransmissionMsec = get_retransmission_msec(self, p)
             yield self.env.timeout(retransmissionMsec)
 

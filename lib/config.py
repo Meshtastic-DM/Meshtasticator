@@ -147,6 +147,7 @@ class Config:
         self.Rx_Powr = 0.0236    # Power consumption in W for receiving
         self.Idle_Powr = 0.0825 # Power consumption in W for idle state
         self.Sleep_Powr = 0.000015  # Power consumption in W for sleep state
+        self.DEFAULT_BATTERY_CAPACITY_J =800  # Default battery capacity in Joules (3.7V, 2000mAh)
         #####################################################
     # Function that needs to be run to ensure the router dependent variables change appropriately
     def update_router_dependencies(self):

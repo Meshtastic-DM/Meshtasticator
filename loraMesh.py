@@ -473,63 +473,68 @@ with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb')
     pickle.dump(plt.gcf(), f)
 plt.close()
 
-realibilityBroadcast = [0 for _ in range(N)]
+source = None
 
-source = 0
-for dest in range(N):
-	if source != dest:
-		realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
-	else:
-		realibilityBroadcast[dest] = None
+for node in nodes:
+	if node.simRole == "Control_Center":
+		source = node.nodeid
+		realibilityBroadcast = [0 for _ in range(N)]
+		for dest in range(N):
+			if source != dest:
+				realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
+			else:
+				realibilityBroadcast[dest] = None
 
-realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+		realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+		break
 
 
-plt.figure(figsize=(8, 6))
-bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
-# Add value labels on top of each bar
-for i, val in enumerate(realibilityBroadcast):
-	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
-plt.xlabel("Destination Node ID")
-plt.ylabel("Reliability of Broadcast Packets")
-plt.title("Broadcast Packet Delivery Reliability")
-plt.grid(axis='y')
-plt.tight_layout()
-plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
-import pickle
-with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
-    pickle.dump(plt.gcf(), f)
+if source is not None:
+	plt.figure(figsize=(8, 6))
+	bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
+	# Add value labels on top of each bar
+	for i, val in enumerate(realibilityBroadcast):
+		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+	plt.xlabel("Destination Node ID")
+	plt.ylabel("Reliability of Broadcast Packets")
+	plt.title("Broadcast Packet Delivery Reliability")
+	plt.grid(axis='y')
+	plt.tight_layout()
+	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+	import pickle
+	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+	    pickle.dump(plt.gcf(), f)
 plt.close()
-
-delaySensor = [0 for _ in range(N)]
-dest = 0
-for source in range(N):
-	if source != dest:
-		if source in sensorPacketMeanDelays.keys():
-			if dest in sensorPacketMeanDelays[source].keys():
-				delaySensor[source] = sensorPacketMeanDelays[source][dest]
+if source is not None:
+	delaySensor = [0 for _ in range(N)]
+	dest = source
+	for source in range(N):
+		if source != dest:
+			if source in sensorPacketMeanDelays.keys():
+				if dest in sensorPacketMeanDelays[source].keys():
+					delaySensor[source] = sensorPacketMeanDelays[source][dest]
+				else:
+					delaySensor[source] = None
 			else:
 				delaySensor[source] = None
 		else:
 			delaySensor[source] = None
-	else:
-		delaySensor[source] = None
-delaySensorMatrix = np.array([val if val is not None else np.nan for val in delaySensor], dtype=float)
+	delaySensorMatrix = np.array([val if val is not None else np.nan for val in delaySensor], dtype=float)
 
-plt.figure(figsize=(8, 6))
-bars = plt.bar(range(len(delaySensorMatrix)), delaySensorMatrix, color='skyblue', edgecolor='black')
-# Add value labels on top of each bar
-for i, val in enumerate(delaySensorMatrix):
-	plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
-plt.xlabel("Source Node ID")
-plt.ylabel("Average Delay of Sensor Packets to Destination 0 (ms)")
-plt.title("Sensor Packet Delay to Destination 0")
-plt.grid(axis='y')
-plt.tight_layout()
-plt.savefig(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
-import pickle
-with open(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
-    pickle.dump(plt.gcf(), f)
+	plt.figure(figsize=(8, 6))
+	bars = plt.bar(range(len(delaySensorMatrix)), delaySensorMatrix, color='skyblue', edgecolor='black')
+	# Add value labels on top of each bar
+	for i, val in enumerate(delaySensorMatrix):
+		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+	plt.xlabel("Source Node ID")
+	plt.ylabel("Average Delay of Sensor Packets to Destination 0 (ms)")
+	plt.title("Sensor Packet Delay to Destination 0")
+	plt.grid(axis='y')
+	plt.tight_layout()
+	plt.savefig(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+	import pickle
+	with open(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+		pickle.dump(plt.gcf(), f)
 plt.close()
 
 delayDM = [[0 for _ in range(N)] for _ in range(N)]
@@ -791,22 +796,35 @@ def save_reliability_vector_to_csv(vector, filename, node_ids=None, column_name=
             else:
                 writer.writerow([nid, f"{val:.4f}"])
 
+source = None
+for node in nodes:
+	if node.simRole == "Control_Center":
+		source = node.nodeid
+		break
 
-print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
+
+if source is not None:
+	print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
+	print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
+	save_nested_dict_to_csv(sensorPacketsDelayArrays, f"output/sensor_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+	save_nested_dict_to_csv(brocastPacketsDelayArrays, f"output/broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+	# Save sensor reliability to CSV
+	save_reliability_vector_to_csv(
+    	realibilityMatrix, 
+    	f"output/sensor_reliability_to_dest0_{conf.SELECTED_ROUTER_TYPE}.csv",
+    	node_ids=list(range(N)),
+    	column_name="reliability_to_dest_0")
+	# Save broadcast reliability to CSV
+	save_reliability_vector_to_csv(
+    	realibilityBroadcast,
+    	f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.csv",
+    	node_ids=list(range(N)),
+    	column_name="reliability_from_src_0")
+
 print("DM packets delay arrays:", dmPacketsDelayArrays)
-print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
-
-save_nested_dict_to_csv(sensorPacketsDelayArrays, f"output/sensor_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
 save_nested_dict_to_csv(dmPacketsDelayArrays, f"output/dm_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
-save_nested_dict_to_csv(brocastPacketsDelayArrays, f"output/broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
 
-# Save sensor reliability to CSV
-save_reliability_vector_to_csv(
-    realibilityMatrix, 
-    f"output/sensor_reliability_to_dest0_{conf.SELECTED_ROUTER_TYPE}.csv",
-    node_ids=list(range(N)),
-    column_name="reliability_to_dest_0"
-)
+
 
 # Save DM reliability matrix to CSV
 save_reliability_matrix_to_csv(
@@ -815,12 +833,49 @@ save_reliability_matrix_to_csv(
     node_ids=list(range(N))
 )
 
-# Save broadcast reliability to CSV
-save_reliability_vector_to_csv(
-    realibilityBroadcast,
-    f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.csv",
-    node_ids=list(range(N)),
-    column_name="reliability_from_src_0"
-)
+
+for n in nodes:
+    with open(f'output/battery_node_{n.nodeid}.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['time', 'battery_level_J'])  # Header
+        for time, battery_level in sorted(n.batteryLevelByTime.items()):
+            writer.writerow([time, battery_level])
+
+os.makedirs('output/plots', exist_ok=True)
+
+# Plot battery level over time for each node
+for n in nodes:
+	if n.batteryLevelByTime:
+		times = sorted(n.batteryLevelByTime.keys())
+		times_minutes = [t / 60000 for t in times]  # Convert ms to minutes
+		battery_levels = [n.batteryLevelByTime[t] for t in times]
+		
+		plt.figure(figsize=(10, 6))
+		plt.plot(times_minutes, battery_levels, linewidth=2, color='blue')
+		plt.xlabel("Time (minutes)")
+		plt.ylabel("Battery Level (J)")
+		plt.title(f"Battery Level Over Time - Node {n.nodeid}")
+		plt.grid(True, alpha=0.3)
+		plt.tight_layout()
+		plt.savefig(f"output/plots/battery_node_{n.nodeid}_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+		plt.close()
+
+# Plot all nodes' battery levels on one graph
+plt.figure(figsize=(12, 7))
+for n in nodes:
+	if n.batteryLevelByTime:
+		times = sorted(n.batteryLevelByTime.keys())
+		times_minutes = [t / 60000 for t in times]  # Convert ms to minutes
+		battery_levels = [n.batteryLevelByTime[t] for t in times]
+		plt.plot(times_minutes, battery_levels, linewidth=1.5, label=f"Node {n.nodeid}", alpha=0.7)
+
+plt.xlabel("Time (minutes)")
+plt.ylabel("Battery Level (J)")
+plt.title(f"Battery Levels Over Time - All Nodes ({conf.SELECTED_ROUTER_TYPE})")
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(f"output/plots/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.close()
 
 print("\nSimulation complete.")

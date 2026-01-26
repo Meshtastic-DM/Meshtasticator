@@ -183,6 +183,8 @@ class MeshNode_SDN(MeshNode_AODV):
         self.verboseprint('At time', round(self.env.now, 3), 'SDN controller node', self.nodeid, 'broadcasted SDN node announcement packet', packet.seq)
     
     def announce_sdn_node_periodically(self, interval):
+        if not self.alive:
+            return
         while True:
             yield self.env.timeout(2*self.conf.TEN_SECONDS_INTERVAL)  # Initial delay to avoid immediate broadcast at time 0
             self.broadcast_sdn_node_announcement()
