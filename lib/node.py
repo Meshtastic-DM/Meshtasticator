@@ -79,6 +79,8 @@ class MeshNode:
         self.DMPacketsDelays = {}
         self.DMPacketsReceivedOrigId = {}
 
+        self.batteryLevelByTime ={}
+
         self.ACKPacketsDelays = []
         # track total transmit time for the last 6 buckets (each is 10s in firmware logic)
         self.channelUtilization = [0] * self.conf.CHANNEL_UTILIZATION_PERIODS  # each entry is ms spent on air in that interval
@@ -95,6 +97,8 @@ class MeshNode:
         env.process(self.receive(self.bc_pipe.get_output_conn()))
         self.transmitter = simpy.Resource(env, 1)
 
+        env.process(self.track_battery_level(env))
+
         # start mobility if enabled
         if self.conf.MOVEMENT_ENABLED and self.moveRng.random() <= self.conf.APPROX_RATIO_NODES_MOVING:
             self.isMoving = True
@@ -110,6 +114,24 @@ class MeshNode:
             self.movementStepSize = self.moveRng.choice(possibleSpeeds)
 
             env.process(self.move_node(env))
+
+    def track_battery_level(self, env):
+        """
+        Periodically compute battery level based on total energy consumed.
+        """
+        while True:
+            # Wait 60 seconds of simulated time
+            yield env.timeout(self.conf.ONE_MIN_INTERVAL)
+
+            currentBatteryLevelJ = self.batteryCapacityJ - self.totalEnergyConsumedJ
+            self.batteryLevelByTime[env.now] = currentBatteryLevelJ
+            #self.verboseprint(f"At time {env.now} node {self.nodeid} battery level: {currentBatteryLevelJ:.2f} J")
+            if currentBatteryLevelJ <= 0:
+                self.batteryLevelByTime[env.now] = 0.0
+                self.verboseprint(f"At time {env.now} node {self.nodeid} battery depleted.")
+                self.kill()
+    
+    
 
     def track_channel_utilization(self, env):
         """
