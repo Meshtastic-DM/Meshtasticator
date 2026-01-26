@@ -7,6 +7,7 @@ from lib.packet_aodv import MeshPacket_AODV
 from lib.phy import check_collision, is_channel_active, airtime
 from lib.packet import NODENUM_BROADCAST
 from lib.packet_aodv import MeshPacket_AODV
+import hashlib
 # cross-platform file locking: prefer fcntl (Unix), fall back to msvcrt (Windows),
 # otherwise no-op (single-process or best-effort)
 try:
@@ -57,7 +58,58 @@ class MeshNode_SDN(MeshNode_AODV):
         self.route_db = {}   # key: (selfId, destId) -> latest entry
         self.env.process(self.sdn_tick())
 
-       
+    def build_cytoscape_elements(self):
+        """
+        Convert current route_db (non-expired entries) into Cytoscape elements.
+        Nodes: every selfId, nextHop, destId
+        Edges: selfId -> nextHop, label includes destId + hopCount
+        """
+        nodes = set()
+        edges = []
+
+        for v in self.route_db.values():
+            s = v.get("selfId")
+            nh = v.get("nextHop")
+            d = v.get("destId")
+            if s is None or nh is None or d is None:
+                continue
+
+            nodes.add(s)
+            nodes.add(nh)
+            nodes.add(d)
+
+            # edge key should be unique; include destId so multiple routes can coexist
+            edges.append({
+                "data": {
+                    "id": f"{s}->{nh}|d={d}",
+                    "source": str(s),
+                    "target": str(nh),
+                    "label": f"d:{d} h:{v.get('hopCount','?')} s:{v.get('destSeqNum','?')}"
+                }
+            })
+
+        node_elems = [{"data": {"id": str(n), "label": str(n)}} for n in sorted(nodes)]
+        return node_elems + edges
+
+    def write_topology_elements_json(self):
+        """
+        Write Cytoscape elements to a JSON file.
+        Also writes only if contents changed (avoid useless browser refresh).
+        """
+        path = "topology_elements.json"
+        elements = self.build_cytoscape_elements()
+
+        payload = json.dumps(elements, separators=(",", ":"), sort_keys=True)
+        new_hash = hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+        # store hash on object to avoid rewriting every minute
+        if getattr(self, "_topo_hash", None) == new_hash:
+            return
+        self._topo_hash = new_hash
+
+        with open(path, "w") as f:
+            f.write(json.dumps(elements, indent=2))
+
     def upsert_route_db(self, info):
         # sanitize
         selfId = info.get("selfId")
@@ -92,16 +144,16 @@ class MeshNode_SDN(MeshNode_AODV):
 
     def sdn_tick(self):
         while True:
-            yield self.env.timeout(60_000)   # 1 minute (your sim uses ms)
+            yield self.env.timeout(60_000)   # 1 minute (ms)
             now = self.env.now
 
-            # purge expired / invalid
-            dead = [k for k,v in self.route_db.items()
+            dead = [k for k, v in self.route_db.items()
                     if (not v.get("valid", True)) or (v.get("expires_at", 0) <= now)]
             for k in dead:
                 del self.route_db[k]
 
             self.write_route_db_json()
+            self.write_topology_elements_json()   # NEW
 
 
     def write_route_db_json(self):
