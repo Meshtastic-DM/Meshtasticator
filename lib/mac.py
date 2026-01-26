@@ -14,12 +14,27 @@ def verboseprint(*args, **kwargs):
 
 
 def set_transmit_delay(node, packet):  # from RadioLibInterface::setTransmitDelay
+    #node.verboseprint(round(node.env.now, 3), 'Setting transmit delay for node', node.nodeid)
     for p in reversed(node.packetsAtN[node.nodeid]):
         if p.seq == packet.seq and p.rssiAtN[node.nodeid] != 0 and p.receivedAtN[node.nodeid] is True:
-            # verboseprint(round(self.env.now, 3), 'Pick delay with RSSI of node', self.nodeid, 'is', p.rssiAtN[self.nodeid])
+            if node.conf.IS_BATTERY_AWARE_ROUTER:
+                #node.verboseprint(round(node.env.now, 3), 'Pick delay with AODV for node', node.nodeid)
+                if packet.is_rreq:
+                    A = 0.5  # weight for battery adjustment
+                    rssi_adjustment = get_battery_precentage_rssi(node)
+                    adjusted_rssi = A*p.rssiAtN[node.nodeid] + (1-A)*rssi_adjustment
+                    node.verboseprint(round(node.env.now, 3), 'Pick delay with adjusted RSSI of node', node.nodeid, 'is', adjusted_rssi)
+                    return get_tx_delay_msec_weighted(node, adjusted_rssi)  # weighted waiting based on adjusted RSSI
+            #node.verboseprint(round(node.env.now, 3), 'Pick delay with RSSI of node', node.nodeid, 'is', p.rssiAtN[node.nodeid])
             return get_tx_delay_msec_weighted(node, p.rssiAtN[node.nodeid])  # weighted waiting based on RSSI
+    node.verboseprint(round(node.env.now, 3), 'No prior packet found, pick delay based on channel utilization for node', node.nodeid)
     return get_tx_delay_msec(node)
 
+def get_battery_precentage_rssi(node):
+    "Convert battery percentage to an effective RSSI adjustment to simulate power saving"
+    SNR_MIN = -20
+    SNR_MAX = 15
+    return SNR_MAX - (SNR_MAX - SNR_MIN)*(node.batteryPercentage/100.0) + node.conf.NOISE_LEVEL
 
 def get_tx_delay_msec_weighted(node, rssi):  # from RadioInterface::getTxDelayMsecWeighted
     snr = rssi - node.conf.NOISE_LEVEL

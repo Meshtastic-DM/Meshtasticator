@@ -106,7 +106,7 @@ class MeshNode_AODV(MeshNode):
 
         # Update routing table with reverse route to the source
         if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
-           packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
+           packet.hop_count + 1 <= self.routing_table[packet.origTxNodeId].hopCount:
             # self.routing_table[packet.origTxNodeId] = RouteEntry(
             #     destId=packet.origTxNodeId,
             #     nextHop=packet.txNodeId,
@@ -185,7 +185,7 @@ class MeshNode_AODV(MeshNode):
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'marked RREP as processed from', packet.txNodeId, 'for', packet.origTxNodeId)
         # Update routing table with forward route to the destination
         if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
-           packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
+           packet.hop_count + 1 <= self.routing_table[packet.origTxNodeId].hopCount:
             # self.routing_table[packet.origTxNodeId] = RouteEntry(
             #     destId=packet.origTxNodeId,
             #     nextHop=packet.txNodeId,

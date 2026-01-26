@@ -29,7 +29,9 @@ class MeshNode:
             self.hopLimit = nodeConfig['hopLimit']
             self.antennaGain = nodeConfig['antennaGain']
             self.simRole = nodeConfig.get('simRole', 'DM')  # Default to 'DM' if not specified
-            self.batteryCapacityJ = nodeConfig.get('batteryCapacityJ', self.conf.DEFAULT_BATTERY_CAPACITY_J)
+            self.StartingBatteryCapacityJ = nodeConfig.get('StartingBatteryCapacityJ', self.conf.DEFAULT_BATTERY_CAPACITY_J)
+            self.totalBatteryCapacityJ = nodeConfig.get('totalBatteryCapacityJ', self.conf.DEFAULT_BATTERY_CAPACITY_J)
+            self.batteryPercentage = 100.0 * (self.StartingBatteryCapacityJ / self.totalBatteryCapacityJ)
         else:
             self.x, self.y = find_random_position(self.conf, nodes)
             self.z = self.conf.HM
@@ -123,8 +125,9 @@ class MeshNode:
             # Wait 60 seconds of simulated time
             yield env.timeout(self.conf.ONE_MIN_INTERVAL)
 
-            currentBatteryLevelJ = self.batteryCapacityJ - self.totalEnergyConsumedJ
-            self.batteryLevelByTime[env.now] = currentBatteryLevelJ
+            currentBatteryLevelJ = self.StartingBatteryCapacityJ - self.totalEnergyConsumedJ
+            self.batteryPercentage = (currentBatteryLevelJ / self.totalBatteryCapacityJ) * 100.0
+            self.batteryLevelByTime[env.now] = self.batteryPercentage
             #self.verboseprint(f"At time {env.now} node {self.nodeid} battery level: {currentBatteryLevelJ:.2f} J")
             if currentBatteryLevelJ <= 0:
                 self.batteryLevelByTime[env.now] = 0.0
