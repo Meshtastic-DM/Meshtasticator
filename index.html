@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SDN Topology</title>
+
+  <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    #bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: #111;
+      color: #eee;
+      z-index: 10;
+    }
+    #cy {
+      position: fixed;
+      top: 44px; left: 0; right: 0; bottom: 0;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #222;
+      font-size: 12px;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #888;
+      display: inline-block;
+    }
+    button {
+      background: #2b2b2b;
+      border: 1px solid #444;
+      color: #eee;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover { background: #333; }
+    select {
+      background: #2b2b2b;
+      border: 1px solid #444;
+      color: #eee;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    a { color: #9bd; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <div class="pill">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Loading…</span>
+    </div>
+
+    <div class="pill">
+      Nodes: <span id="nodeCount">0</span>
+      Edges: <span id="edgeCount">0</span>
+    </div>
+
+    <div class="pill">
+      Updated: <span id="updatedAt">—</span>
+    </div>
+
+    <label class="pill" style="gap:10px;">
+      Layout
+      <select id="layoutSel">
+        <option value="cose" selected>cose</option>
+        <option value="breadthfirst">breadthfirst</option>
+        <option value="circle">circle</option>
+        <option value="grid">grid</option>
+        <option value="concentric">concentric</option>
+      </select>
+    </label>
+
+    <button id="fitBtn">Fit</button>
+    <button id="refreshBtn">Refresh</button>
+
+    <div style="margin-left:auto; opacity:.85; font-size:12px;">
+      Source: <code>topology_elements.json</code>
+      &nbsp;|&nbsp;
+      Serve with: <code>python -m http.server 8000</code>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+
+  <script>
+    const FILE = "topology_elements.json";
+    const POLL_MS = 1000;
+
+    let lastHash = "";
+    let cy = null;
+
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const nodeCount = document.getElementById("nodeCount");
+    const edgeCount = document.getElementById("edgeCount");
+    const updatedAt = document.getElementById("updatedAt");
+    const layoutSel = document.getElementById("layoutSel");
+    const fitBtn = document.getElementById("fitBtn");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    function setStatus(ok, msg) {
+      statusDot.style.background = ok ? "#2ecc71" : "#e74c3c";
+      statusText.textContent = msg;
+    }
+
+    function nowTimeString() {
+      const d = new Date();
+      return d.toLocaleTimeString();
+    }
+
+    async function sha256(text) {
+      const data = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      return [...new Uint8Array(hashBuffer)]
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function normalizeElements(elements) {
+      // Cytoscape expects IDs as strings. Ensure node IDs are strings.
+      for (const el of elements) {
+        if (el.data) {
+          if (el.data.id !== undefined) el.data.id = String(el.data.id);
+          if (el.data.source !== undefined) el.data.source = String(el.data.source);
+          if (el.data.target !== undefined) el.data.target = String(el.data.target);
+        }
+      }
+      return elements;
+    }
+
+    function applyCounts(elements) {
+      const nodes = elements.filter(e => !e.data || (!e.data.source && !e.data.target));
+      const edges = elements.filter(e => e.data && e.data.source && e.data.target);
+      nodeCount.textContent = nodes.length;
+      edgeCount.textContent = edges.length;
+    }
+
+    function runLayout(name) {
+      if (!cy) return;
+      cy.layout({ name }).run();
+    }
+
+    function initCy(elements) {
+      cy = cytoscape({
+        container: document.getElementById("cy"),
+        elements,
+        layout: { name: layoutSel.value },
+        style: [
+          {
+            selector: "node",
+            style: {
+              "label": "data(label)",
+              "background-color": "#1976d2",
+              "color": "#fff",
+              "text-valign": "center",
+              "text-halign": "center",
+              "font-size": 12,
+              "width": 28,
+              "height": 28
+            }
+          },
+          {
+            selector: "edge",
+            style: {
+              "curve-style": "bezier",
+              "target-arrow-shape": "triangle",
+              "label": "data(label)",
+              "line-color": "#555",
+              "target-arrow-color": "#555",
+              "font-size": 10,
+              "text-rotation": "autorotate",
+              "text-margin-y": -8,
+              "width": 2
+            }
+          },
+          {
+            selector: ":selected",
+            style: {
+              "background-color": "#ff9800",
+              "line-color": "#ff9800",
+              "target-arrow-color": "#ff9800"
+            }
+          }
+        ]
+      });
+
+      cy.on("tap", "node", (evt) => {
+        const n = evt.target;
+        setStatus(true, `Node ${n.id()} selected`);
+      });
+
+      cy.on("tap", "edge", (evt) => {
+        const e = evt.target;
+        setStatus(true, `Edge ${e.data("source")} → ${e.data("target")} (${e.data("label") || ""})`);
+      });
+    }
+
+    function updateCy(elements) {
+      if (!cy) {
+        initCy(elements);
+        return;
+      }
+
+      // Replace whole graph (simple + safe)
+      cy.elements().remove();
+      cy.add(elements);
+      runLayout(layoutSel.value);
+    }
+
+    async function loadOnce(force = false) {
+      try {
+        const res = await fetch(FILE + "?ts=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const text = await res.text();
+        const hash = await sha256(text);
+
+        if (!force && hash === lastHash) {
+          setStatus(true, "No change");
+          return;
+        }
+
+        lastHash = hash;
+
+        const elements = normalizeElements(JSON.parse(text));
+        applyCounts(elements);
+        updateCy(elements);
+
+        updatedAt.textContent = nowTimeString();
+        setStatus(true, "Updated");
+
+      } catch (e) {
+        setStatus(false, `Error: ${e.message} (serve folder via http.server)`);
+      }
+    }
+
+    // UI hooks
+    layoutSel.addEventListener("change", () => runLayout(layoutSel.value));
+    fitBtn.addEventListener("click", () => cy && cy.fit(undefined, 30));
+    refreshBtn.addEventListener("click", () => loadOnce(true));
+
+    // Poll for changes
+    setInterval(() => loadOnce(false), POLL_MS);
+    loadOnce(true);
+  </script>
+</body>
+</html>
