@@ -612,7 +612,7 @@ class MeshNode_AODV(MeshNode):
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'dropped packet', packet.seq, 'due to hop limit reached')
                 for sentPacket in self.packets:
                     # check if ACK for message you currently have in queue
-                    if sentPacket.txNodeId == self.nodeid and sentPacket.seq == packet.seq:
+                    if sentPacket.origTxNodeId == self.nodeid and sentPacket.seq == packet.seq:
                         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received implicit ACK for message in queue.')
                         ackReceived = True
                         sentPacket.ackReceived = True
