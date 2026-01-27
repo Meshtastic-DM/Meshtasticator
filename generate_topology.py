@@ -22,6 +22,8 @@ def generate_random_topology(num_dm, num_sensor, num_router,
                             z_default=1.0, router_z=2.0,
                             min_distance=50.0,
                             max_distance=None,
+                            battery_min=100.0,
+                            battery_max=800.0,
                             seed=None):
     """
     Generate random node positions for network topology.
@@ -93,7 +95,8 @@ def generate_random_topology(num_dm, num_sensor, num_router,
         'isClientMute': False,
         'isRepeater': False,
         'isRouter': False,
-        'neighborInfo': False
+        'neighborInfo': False,
+        'StartingBatteryCapacityJ': battery_max
     }
     positions.append((0.0, 0.0))
     node_id += 1
@@ -101,6 +104,7 @@ def generate_random_topology(num_dm, num_sensor, num_router,
     # Generate DM nodes
     for i in range(num_dm):
         x, y, z = generate_position(z_default)
+        startingBattery = round(random.uniform(battery_min, battery_max), 1)
         nodes[node_id] = {
             'x': x,
             'y': y,
@@ -111,13 +115,15 @@ def generate_random_topology(num_dm, num_sensor, num_router,
             'isClientMute': False,
             'isRepeater': False,
             'isRouter': False,
-            'neighborInfo': False
+            'neighborInfo': False,
+            'StartingBatteryCapacityJ': startingBattery
         }
         node_id += 1
     
     # Generate Sensor nodes
     for i in range(num_sensor):
         x, y, z = generate_position(z_default)
+        startingBattery = round(random.uniform(battery_min, battery_max), 1)
         nodes[node_id] = {
             'x': x,
             'y': y,
@@ -128,13 +134,15 @@ def generate_random_topology(num_dm, num_sensor, num_router,
             'isClientMute': False,
             'isRepeater': False,
             'isRouter': False,
-            'neighborInfo': False
+            'neighborInfo': False,
+            'StartingBatteryCapacityJ': startingBattery
         }
         node_id += 1
     
     # Generate Router nodes (elevated z coordinate)
     for i in range(num_router):
         x, y, z = generate_position(router_z)
+        startingBattery = round(random.uniform(battery_min, battery_max), 1)
         nodes[node_id] = {
             'x': x,
             'y': y,
@@ -145,7 +153,8 @@ def generate_random_topology(num_dm, num_sensor, num_router,
             'isClientMute': False,
             'isRepeater': False,
             'isRouter': True,
-            'neighborInfo': False
+            'neighborInfo': False,
+            'StartingBatteryCapacityJ': startingBattery
         }
         node_id += 1
     
@@ -328,7 +337,8 @@ Examples:
         args.router_z = params.get('router_z', args.router_z)
         args.min_distance = params.get('min_distance', args.min_distance)
         args.max_distance = params.get('max_distance', args.max_distance)
-        
+        args.battery_min = params.get('batteryMin', 100.0)
+        args.battery_max = params.get('batteryMax', 800.0)
         # Only override these if they weren't explicitly set on command line
         if cli_seed is not None:
             args.seed = cli_seed
@@ -369,6 +379,8 @@ Examples:
         router_z=args.router_z,
         min_distance=args.min_distance,
         max_distance=args.max_distance,
+        battery_min=args.battery_min,
+        battery_max=args.battery_max,
         seed=args.seed
     )
     

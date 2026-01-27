@@ -91,7 +91,7 @@ class Config:
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
         self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.AODV
-        self.IS_BATTERY_AWARE_ROUTER = True  # Set to True to enable battery aware routing adjustments
+        self.IS_BATTERY_AWARE_ROUTER = False  # Set to True to enable battery aware routing adjustments
 
         ############################
         #### ZRP CONFIGURATION #####

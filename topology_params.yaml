@@ -28,3 +28,6 @@ quiet: false               # Set to true to suppress statistics
 # Random seed (optional, set to null for random)
 # Use a specific number for reproducible topology
 seed: null
+
+batteryMin : 100.0
+batteryMax : 800.0
