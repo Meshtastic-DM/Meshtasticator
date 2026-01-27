@@ -55,3 +55,4 @@ output.txt
 output/
 batch_results_*
 results*.csv
+comp**/*
