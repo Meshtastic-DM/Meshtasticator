@@ -249,7 +249,7 @@ class MeshNode:
                     break
                 yield self.env.timeout(nextGen)
                 destId = NODENUM_BROADCAST
-                self.numberOfBroadcastPacketsCreated += 1
+                #self.numberOfBroadcastPacketsCreated += 1
 
             if self.simRole == "sdn_node":
                 p = self.send_packet(NODENUM_BROADCAST, data={}, wantAck=True, is_sdn_update=True)
