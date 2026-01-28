@@ -441,6 +441,12 @@ class MeshNode_AODV(MeshNode):
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'could not decode packet.')
                     continue
                 packet.receivedAtN[self.nodeid] = True
+                # after collision check and packet.receivedAtN[...] = True
+                if getattr(packet, "is_sdn_update", False):
+                    # optionally still handle SDN logic
+                    self.handle_sdn_update(packet)
+                    continue
+
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'received packet', packet.seq, 'with delay', round(self.env.now - packet.genTime, 2))
                 self.delays.append(self.env.now - packet.genTime)
                 if packet.is_rreq:
