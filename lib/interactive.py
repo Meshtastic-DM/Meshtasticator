@@ -6,6 +6,8 @@ import time
 import yaml
 import os
 from shutil import which
+import subprocess
+
 
 import google.protobuf.json_format as proto
 from matplotlib import patches
@@ -414,31 +416,35 @@ class InteractiveSim:
                 print(f"Docker container with name {self.container.name} is started.")
                 print(f"You can check the device logs using 'docker exec -it {self.container.name} cat /home/out_x.log', where x is the node number.")
         else:
-            # run nodes natively (not in docker)
-            for n in self.nodes:  # [1:]
-                call = []
-                if which('gnome-terminal') is not None:
-                    call += ["gnome-terminal",
-                             f"--title='Node {n.nodeid}'",
-                             "--"]
-                elif which('xterm') is not None:
-                    call += ["xterm",
-                             f"-title 'Node {n.nodeid}'",
-                             "-e"]
-                else:
-                    print('The interactive simulator on native Linux (without Docker) requires either gnome-terminal or xterm.')
-                    exit(1)
+            # run nodes natively (WSL + gnome-terminal / xterm)
+            os.makedirs("out", exist_ok=True)
 
-                # executable
-                call += [os.path.join(args.program, 'program')]
-                # node parameters
-                call += [f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid}",
-                         f"-h {n.hwId}",
-                         f"-p {n.TCPPort}"]
-                if self.removeConfig:
-                    call.append("-e")
-                call.append("&")
-                os.system(" ".join(call))
+            prog = os.path.join(args.program, 'program')
+
+            for n in self.nodes:
+                node_args = (
+                    f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid} "
+                    f"-h {n.hwId} "
+                    f"-p {n.TCPPort} "
+                    + ("-e " if self.removeConfig else "")
+                )
+
+                # Force line buffering so logs appear live AND get written
+                cmd = f"stdbuf -oL -eL {prog} {node_args} 2>&1 | tee out/node{n.nodeid}.log"
+
+                if which('gnome-terminal') is not None:
+                    os.system(
+                        f"gnome-terminal --title='Node {n.nodeid}' -- bash -lc \"{cmd}\""
+                    )
+                elif which('xterm') is not None:
+                    os.system(
+                        f"xterm -title 'Node {n.nodeid}' -e bash -lc \"{cmd}\""
+                    )
+                else:
+                    print(
+                        'Native mode requires gnome-terminal or xterm (WSLg/X11).'
+                    )
+                    exit(1)
                 if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
                     time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
 
