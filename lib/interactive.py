@@ -639,7 +639,8 @@ class InteractiveSim:
         meshPacket.to = packet["to"]
         setattr(meshPacket, "from", packet["from"])
         meshPacket.id = packet["id"]
-        meshPacket.relay_node = packet.get("relayNode", 0)
+        meshPacket.relay_node = packet.get("relayNode", meshPacket.relay_node)
+        meshPacket.next_hop = packet.get("nextHop", meshPacket.next_hop)          
         meshPacket.want_ack = packet.get("wantAck", meshPacket.want_ack)
         meshPacket.hop_limit = packet.get("hopLimit", meshPacket.hop_limit)
         meshPacket.hop_start = packet.get("hopStart", meshPacket.hop_start)
