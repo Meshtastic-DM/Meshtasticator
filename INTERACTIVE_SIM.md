@@ -7,6 +7,7 @@ Please `git clone` or download this repository, navigate to the Meshtasticator f
 ```pip install -r requirements.txt```.
 
 The simulator runs the Linux native application of Meshtastic firmware, which can be done on your Linux PC using [PlatformIO](https://meshtastic.org/docs/development/firmware/build) or using [Docker](https://meshtastic.org/docs/software/linux-native#usage-with-docker). 
+- Make sure the preferences directories exist before running the interactive sim: `/home/<user>/.portduino/node0/prefs` through `/home/<user>/.portduino/node10/prefs`.
 - Using PlatformIO, select 'native' and click on 'build'. Locate the generated binary file, which will probably be in *firmware/.pio/build/native/*. Either copy the file called 'program' to the directory where you will be running the Python script from, or add the full path as argument after *-p*. For example: ```python3 interactiveSim.py 3 -p /home/User/firmware/.pio/build/native/```.
 - For usage with Docker, the simulator will pull a Container Image from Docker Hub, which builds the latest Meshtastic firmware. Install the Docker SDK for Python with ```pip3 install docker```. Make sure the Docker daemon or Desktop application is running. Then run the interactive simulator with *-d* as argument, e.g.: ```python3 interactiveSim.py 3 -d```.
 
