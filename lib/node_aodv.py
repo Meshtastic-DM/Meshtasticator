@@ -431,7 +431,7 @@ class MeshNode_AODV(MeshNode):
             }
         return route_info
     
-    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 4000000):
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 200000):
         self.routing_table[destId] = RouteEntry(
             destId=destId,
             nextHop=nextHop,

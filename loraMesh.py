@@ -835,11 +835,33 @@ save_reliability_matrix_to_csv(
 
 
 for n in nodes:
-    with open(f'output/battery_node_{n.nodeid}.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['time', 'battery_level_J'])  # Header
-        for time, battery_level in sorted(n.batteryLevelByTime.items()):
-            writer.writerow([time, battery_level])
+	with open(f'output/battery_node_{n.nodeid}.csv', 'w', newline='') as f:
+		writer = csv.writer(f)
+		writer.writerow(['time', 'battery_level_J'])  # Header
+		for time, battery_level in sorted(n.batteryLevelByTime.items()):
+			writer.writerow([time, battery_level])
+
+# Save all nodes' battery levels in a single CSV
+with open(f'output/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE}.csv', 'w', newline='') as f:
+	writer = csv.writer(f)
+	
+	# Collect all unique timestamps from all nodes
+	all_times = set()
+	for n in nodes:
+		all_times.update(n.batteryLevelByTime.keys())
+	all_times = sorted(all_times)
+	
+	# Header: time, node_0, node_1, node_2, ...
+	header = ['time_ms'] + [f'node_{n.nodeid}' for n in nodes]
+	writer.writerow(header)
+	
+	# Write data rows
+	for time in all_times:
+		row = [time]
+		for n in nodes:
+			battery_level = n.batteryLevelByTime.get(time, '')  # Empty string if no data at this time
+			row.append(battery_level)
+		writer.writerow(row)
 
 os.makedirs('output/plots', exist_ok=True)
 
