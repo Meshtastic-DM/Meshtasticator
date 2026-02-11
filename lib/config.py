@@ -9,6 +9,7 @@ class Config:
         AODV = 'AODV'
         SDN_AODV = 'SDN_AODV'
         ZRP = 'ZRP'
+        BL_A_AODV = 'BL_A_AODV'
 
     def __init__(self):
         ############################Path Loss Model Parameters############################
@@ -145,8 +146,8 @@ class Config:
 
         ####### Power Consumption Model Parameters ########
         self.Tx_Powr = 0.4125  # Power consumption in W for transmitting
-        self.Rx_Powr = 0.0236    # Power consumption in W for receiving
-        self.Idle_Powr = 0.0825 # Power consumption in W for idle state
+        self.Rx_Powr = 0.0136    # Power consumption in W for receiving
+        self.Idle_Powr = 0.0025 # Power consumption in W for idle state
         self.Sleep_Powr = 0.000015  # Power consumption in W for sleep state
         self.DEFAULT_BATTERY_CAPACITY_J =800  # Default battery capacity in Joules (3.7V, 2000mAh)
         #####################################################

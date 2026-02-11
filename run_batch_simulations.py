@@ -199,7 +199,9 @@ def move_output_files(output_dir, routing_type):
         f"*_{routing_type}.png",
         f"*_ROUTER_TYPE.{routing_type}.png",
         f"*_{routing_type}.pkl",
-        f"*_ROUTER_TYPE.{routing_type}.pkl"
+        f"*_ROUTER_TYPE.{routing_type}.pkl",
+        f"plots/*_ROUTER_TYPE.{routing_type}.png",
+        f"battery_node_*.csv"
     ]
     
     files_moved = 0
@@ -335,8 +337,8 @@ Examples:
     parser.add_argument('--params', '-p', type=str, default='topology_params.yaml',
                        help='Topology parameters YAML file (default: topology_params.yaml)')
     parser.add_argument('--routing', '-r', nargs='+',
-                       default=['AODV', 'ZRP', 'MANAGED_FLOOD'],
-                       help='Routing protocols to test (default: AODV ZRP MANAGED_FLOOD)')
+                       default=['AODV', 'MANAGED_FLOOD','BL_A_AODV'], #removed ZRP for testing
+                       help='Routing protocols to test (default: AODV ZRP MANAGED_FLOOD BL_A_AODV)')
     parser.add_argument('--output', '-o', type=str,
                        default=None,
                        help='Base output directory (default: batch_results_TIMESTAMP)')

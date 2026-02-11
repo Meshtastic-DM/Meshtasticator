@@ -17,7 +17,7 @@ def set_transmit_delay(node, packet):  # from RadioLibInterface::setTransmitDela
     #node.verboseprint(round(node.env.now, 3), 'Setting transmit delay for node', node.nodeid)
     for p in reversed(node.packetsAtN[node.nodeid]):
         if p.seq == packet.seq and p.rssiAtN[node.nodeid] != 0 and p.receivedAtN[node.nodeid] is True:
-            if node.conf.IS_BATTERY_AWARE_ROUTER:
+            if node.conf.SELECTED_ROUTER_TYPE == node.conf.ROUTER_TYPE.BL_A_AODV:
                 #node.verboseprint(round(node.env.now, 3), 'Pick delay with AODV for node', node.nodeid)
                 if packet.is_rreq:
                     A = 0.5  # weight for battery adjustment

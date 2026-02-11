@@ -55,3 +55,5 @@ output.txt
 output/
 batch_results_*
 results*.csv
+test*.py
+iarp_table.txt

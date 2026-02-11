@@ -260,7 +260,7 @@ class MeshNode:
                     self.numberOfSensorPacketsCreated[destId] = 0
                 self.numberOfSensorPacketsCreated[destId] += 1
             elif self.simRole == "Control_Center":
-                nextGen = self.get_next_time(25*60*1000)
+                nextGen = self.get_next_time(5*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
@@ -294,7 +294,7 @@ class MeshNode:
                     break
                 else:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
-                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV:
+                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.BL_A_AODV:
                             ############ AODV version ############
                             pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
                             pNew.retransmissions = minRetransmissions - 1

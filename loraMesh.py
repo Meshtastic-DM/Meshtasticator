@@ -136,7 +136,7 @@ asymmetricLinks = 0
 noLinks = 0
 
 graph = Graph(conf)
-if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV:
+if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV or conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.BL_A_AODV:
 	for i in range(conf.NR_NODES):
 		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 		nodes.append(node)
