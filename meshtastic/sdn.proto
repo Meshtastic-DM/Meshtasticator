@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package meshtastic;
+
+option java_outer_classname = "SDNProtos";
+option optimize_for = LITE_RUNTIME;
+option go_package = "github.com/meshtastic/go/generated";
+
+/**
+ * SDN (Software Defined Networking) protocol messages
+ */
+
+/**
+ * SDN Controller Announcement - broadcast periodically by SDN controller
+ */
+message SDNAnnouncement {
+    /**
+     * HMAC hash for authentication (16 bytes)
+     */
+    bytes hmac_hash = 1;
+
+    /**
+     * Curve25519 public key (32 bytes) for the SDN controller
+     */
+    bytes public_key = 2;
+
+    /**
+     * Sequence number for announcements (increments with each announcement)
+     */
+    uint32 sequence_num = 3;
+
+    /**
+     * Unix timestamp when announcement was created
+     */
+    fixed32 timestamp = 4;
+}
+
+/**
+ * Route update sent to SDN controller when AODV route is learned
+ */
+message SDNRouteUpdate {
+    /**
+     * Route destination node (32-bit full node number)
+     */
+    fixed32 destination = 1;
+
+    /**
+     * Next hop node (8-bit last byte)
+     */
+    uint32 next_hop = 2;
+
+    /**
+     * Number of hops to destination
+     */
+    uint32 hop_count = 3;
+
+    /**
+     * AODV destination sequence number
+     */
+    uint32 dest_seq_num = 4;
+
+    /**
+     * Node reporting this route (this node's ID)
+     */
+    fixed32 reporter_node = 5;
+
+    /**
+     * Unix timestamp when route was learned
+     */
+    fixed32 timestamp = 6;
+}
+
+/**
+ * SDN message wrapper
+ */
+message SDN {
+    /**
+     * The actual SDN message payload
+     */
+    oneof payload_variant {
+        SDNAnnouncement announcement = 1;
+        SDNRouteUpdate route_update = 2;
+    }
+}

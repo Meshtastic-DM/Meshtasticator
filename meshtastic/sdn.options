@@ -1,0 +1,5 @@
+# SDN protobuf options
+# Fixed-size byte arrays for HMAC and public key
+
+meshtastic.SDNAnnouncement.hmac_hash max_size:16
+meshtastic.SDNAnnouncement.public_key max_size:32
