@@ -73,12 +73,21 @@ class InteractiveNode:
         p.set_owner.long_name = "Node "+str(self.nodeid)
         p.set_owner.short_name = str(self.nodeid)
         self.iface.localNode._sendAdmin(p)
+        
+        # Set LoRa region (REQUIRED for PKI key generation!)
+        loraConfig = self.iface.localNode.localConfig.lora
+        # Map config region to Meshtastic region enum codes
+        region_map = {"US": 1, "EU433": 2, "EU868": 3}
+        region_name = next((k for k, v in conf.regions.items() if v == conf.REGION), "US")
+        region_code = region_map.get(region_name, 1)  # Default to US = 1
+        
+        setattr(loraConfig, 'region', region_code)
         if self.hopLimit != 3:
-            loraConfig = self.iface.localNode.localConfig.lora
-            setattr(self.iface.localNode.localConfig.lora, 'hop_limit', self.hopLimit)
-            p = admin_pb2.AdminMessage()
-            p.set_config.lora.CopyFrom(loraConfig)
-            self.iface.localNode._sendAdmin(p)
+            setattr(loraConfig, 'hop_limit', self.hopLimit)
+        p = admin_pb2.AdminMessage()
+        p.set_config.lora.CopyFrom(loraConfig)
+        self.iface.localNode._sendAdmin(p)
+        requiresReboot = True  # Region change requires reboot for PKI key generation
 
         if self.isRouter:
             requiresReboot = True
