@@ -501,11 +501,20 @@ Examples:
   
   # Specify custom output directory
   python run_batch_simulations.py --runs 10 --output my_batch_results
+  
+  # Enable checkpointing (for long runs)
+  python run_batch_simulations.py --runs 50 --checkpoint
+  
+  # Resume from checkpoint (no --runs needed)
+  python run_batch_simulations.py --resume batch_results_20260214_120000
+  
+  # Resume with auto-sync to Google Drive (Colab)
+  python run_batch_simulations.py --resume batch_results_20260214_120000 --auto-sync
         """
     )
     
-    parser.add_argument('--runs', '-n', type=int, required=True,
-                       help='Number of simulation runs to perform')
+    parser.add_argument('--runs', '-n', type=int, required=False, default=None,
+                       help='Number of simulation runs to perform (required unless using --resume)')
     parser.add_argument('--params', '-p', type=str, default='topology_params.yaml',
                        help='Topology parameters YAML file (default: topology_params.yaml)')
     parser.add_argument('--routing', '-r', nargs='+',
@@ -526,6 +535,10 @@ Examples:
                        help='Auto-detect Colab and sync to Drive (uses /content/drive/MyDrive/Meshtasticator_Results)')
     
     args = parser.parse_args()
+    
+    # Validate --runs requirement
+    if not args.resume and args.runs is None:
+        parser.error("--runs is required when not using --resume")
     
     # Handle Google Drive sync
     drive_sync_path = None
@@ -588,7 +601,14 @@ Examples:
         else:
             # Count existing run directories
             run_dirs = list(base_dir.glob("run_*"))
-            total_runs = max([int(d.name.split('_')[1]) for d in run_dirs] + [args.runs])
+            if run_dirs:
+                # Get the highest run number from existing directories
+                total_runs = max([int(d.name.split('_')[1]) for d in run_dirs])
+            elif args.runs is not None:
+                # Use provided runs if available
+                total_runs = args.runs
+            else:
+                parser.error("Cannot determine total runs. No checkpoint found and no runs in directory.")
             start_time = time.time()
         
         print(f"✓ Resuming with {len(routing_types)} routing types: {', '.join(routing_types)}")
