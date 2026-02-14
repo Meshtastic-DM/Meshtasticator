@@ -1,5 +1,19 @@
 import numpy as np
 import pandas as pd
+import os
+
+# Configure matplotlib backend for headless environments (Colab, servers)
+import matplotlib
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
+
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 

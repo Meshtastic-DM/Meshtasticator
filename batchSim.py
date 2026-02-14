@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 import collections
 import time
+import os
 import matplotlib
 
-try:
-    matplotlib.use("TkAgg")
-except ImportError:
-    print('Tkinter is needed. Install python3-tk with your package manager.')
-    exit(1)
+# Use non-interactive backend for headless environments (Colab, servers)
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
 
 import simpy
 import numpy as np

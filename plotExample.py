@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
+import os
 import matplotlib
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-try:
-    matplotlib.use("TkAgg")
-except ImportError:
-    print('Tkinter is needed. Install python3-tk with your package manager.')
+# Use non-interactive backend for headless environments (Colab, servers)
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
 
 hopLimits = [1, 2, 3, 4, 5, 6, 7]
 nrNodes = [3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25]

@@ -4,6 +4,18 @@ import os
 import sys
 import random
 
+# Configure matplotlib backend for headless environments (Colab, servers)
+import matplotlib
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
+
 from matplotlib import pyplot as plt
 import yaml
 import simpy

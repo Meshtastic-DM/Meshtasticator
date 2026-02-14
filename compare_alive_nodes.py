@@ -5,10 +5,23 @@ Calculates median across multiple runs for robustness.
 """
 
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
+
+# Configure matplotlib backend for headless environments (Colab, servers)
+import matplotlib
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
+
+import matplotlib.pyplot as plt
 
 def count_alive_nodes(df):
     """

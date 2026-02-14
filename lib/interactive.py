@@ -7,6 +7,18 @@ import yaml
 import os
 from shutil import which
 
+# Configure matplotlib backend for headless environments (Colab, servers)
+import matplotlib
+backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
+if backend == 'TkAgg':
+    try:
+        matplotlib.use("TkAgg")
+    except ImportError:
+        print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
+        matplotlib.use('Agg')
+else:
+    matplotlib.use(backend)
+
 import google.protobuf.json_format as proto
 from matplotlib import patches
 from meshtastic import tcp_interface, BROADCAST_NUM, mesh_pb2, admin_pb2, telemetry_pb2, portnums_pb2, channel_pb2
