@@ -1,6 +1,30 @@
 # Meshtasticator
 Discrete-event and interactive simulator for [Meshtastic](https://meshtastic.org/). 
 
+## ☁️ Run on Cloud Platforms (Google Colab, Kaggle, etc.)
+
+You can now run Meshtasticator on Google Colab and other cloud platforms **with checkpoint support** for long-running simulations!
+
+**Quick Start:**
+- 📓 Use the provided [Meshtasticator_Colab.ipynb](Meshtasticator_Colab.ipynb) notebook
+- 💾 Automatic checkpoint/resume for interrupted simulations
+- 📊 Results saved to Google Drive
+
+**Documentation:**
+- [5-Minute Quick Start](COLAB_QUICKSTART.md) - Get running immediately
+- [Complete Colab Guide](COLAB_GUIDE.md) - Detailed instructions and troubleshooting
+
+**Key Features:**
+```bash
+# Run with checkpoint support
+python run_batch_simulations.py --runs 20 --checkpoint
+
+# Resume if interrupted
+python run_batch_simulations.py --resume batch_results_20260214_120000
+```
+
+---
+
 ## Discrete-event simulator
 The discrete-event simulator mimics the radio section of the device software in order to understand its working. It can also be used to assess the performance of your scenario, or the scalability of the protocol. 
 
