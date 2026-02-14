@@ -132,6 +132,11 @@ def parse_params(conf, args):
 
 nodeConfig = parse_params(conf, sys.argv)
 conf.update_router_dependencies()
+
+# Create output directories if they don't exist (important for Colab)
+os.makedirs('output', exist_ok=True)
+os.makedirs('output/plots', exist_ok=True)
+
 env = simpy.Environment()
 bc_pipe = BroadcastPipe(env)
 
@@ -441,9 +446,9 @@ plt.title("Reliability from Sensors to Destination Node 0")
 plt.xticks(x, [f"Src {i}" for i in x])
 plt.grid(axis='y')
 plt.tight_layout()
-plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -479,9 +484,9 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.savefig(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -512,9 +517,9 @@ if source is not None:
 	plt.title("Broadcast Packet Delivery Reliability")
 	plt.grid(axis='y')
 	plt.tight_layout()
-	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 	import pickle
-	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
 	    pickle.dump(plt.gcf(), f)
 plt.close()
 if source is not None:
@@ -543,9 +548,9 @@ if source is not None:
 	plt.title("Sensor Packet Delay to Destination 0")
 	plt.grid(axis='y')
 	plt.tight_layout()
-	plt.savefig(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+	plt.savefig(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 	import pickle
-	with open(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+	with open(f"output/sensor_delay_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
 		pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -578,9 +583,9 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.savefig(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/dm_delay_matrix_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -609,9 +614,9 @@ plt.ylabel("Average Delay of Broadcast Packets (ms)")
 plt.title("Broadcast Packet Delay")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.savefig(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/broadcast_delay_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -639,9 +644,9 @@ plt.ylabel("Extra Sensor Packets Ratio")
 plt.title("Extra Sensor Packets Ratio from Sources to Destination 0")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.savefig(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/extra_sensor_packets_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -674,9 +679,9 @@ plt.xticks(ticks=np.arange(N), labels=np.arange(N))
 plt.yticks(ticks=np.arange(N), labels=np.arange(N))
 plt.grid(False)
 plt.tight_layout()
-plt.savefig(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/extra_dm_packets_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -701,9 +706,9 @@ plt.ylabel("Extra Broadcast Packets Ratio")
 plt.title("Extra Broadcast Packets Ratio from Source 0")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.savefig(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 import pickle
-with open(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+with open(f"output/extra_broadcast_packets_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
     pickle.dump(plt.gcf(), f)
 plt.close()
 
@@ -726,13 +731,13 @@ plt.ylabel("Energy Consumed (J)")
 plt.title("Energy Consumption per Node")
 plt.grid(axis='y')
 plt.tight_layout()
-plt.savefig(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
-with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+plt.savefig(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE.name}.pkl", 'wb') as f:
 	pickle.dump(plt.gcf(), f)
 plt.close()
 
 # Save energy consumption to CSV
-with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE}.csv", mode="w", newline="") as f:
+with open(f"output/energy_consumption_{conf.SELECTED_ROUTER_TYPE.name}.csv", mode="w", newline="") as f:
 	writer = csv.writer(f)
 	writer.writerow(["node_id", "energy_consumed_J"])
 	for node_id, energy in sorted(energyConsumedPerNode.items()):
@@ -818,30 +823,30 @@ for node in nodes:
 if source is not None:
 	print("Sensor packets delay arrays:", sensorPacketsDelayArrays)
 	print("Broadcast packets delay arrays:", brocastPacketsDelayArrays)
-	save_nested_dict_to_csv(sensorPacketsDelayArrays, f"output/sensor_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
-	save_nested_dict_to_csv(brocastPacketsDelayArrays, f"output/broadcast_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+	save_nested_dict_to_csv(sensorPacketsDelayArrays, f"output/sensor_packets_{conf.SELECTED_ROUTER_TYPE.name}.csv")
+	save_nested_dict_to_csv(brocastPacketsDelayArrays, f"output/broadcast_packets_{conf.SELECTED_ROUTER_TYPE.name}.csv")
 	# Save sensor reliability to CSV
 	save_reliability_vector_to_csv(
     	realibilityMatrix, 
-    	f"output/sensor_reliability_to_dest0_{conf.SELECTED_ROUTER_TYPE}.csv",
+    	f"output/sensor_reliability_to_dest0_{conf.SELECTED_ROUTER_TYPE.name}.csv",
     	node_ids=list(range(N)),
     	column_name="reliability_to_dest_0")
 	# Save broadcast reliability to CSV
 	save_reliability_vector_to_csv(
     	realibilityBroadcast,
-    	f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.csv",
+    	f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE.name}.csv",
     	node_ids=list(range(N)),
     	column_name="reliability_from_src_0")
 
 print("DM packets delay arrays:", dmPacketsDelayArrays)
-save_nested_dict_to_csv(dmPacketsDelayArrays, f"output/dm_packets_{conf.SELECTED_ROUTER_TYPE}.csv")
+save_nested_dict_to_csv(dmPacketsDelayArrays, f"output/dm_packets_{conf.SELECTED_ROUTER_TYPE.name}.csv")
 
 
 
 # Save DM reliability matrix to CSV
 save_reliability_matrix_to_csv(
     DMmatrix,
-    f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.csv",
+    f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE.name}.csv",
     node_ids=list(range(N))
 )
 
@@ -854,7 +859,7 @@ for n in nodes:
 			writer.writerow([time, battery_level])
 
 # Save all nodes' battery levels in a single CSV
-with open(f'output/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE}.csv', 'w', newline='') as f:
+with open(f'output/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE.name}.csv', 'w', newline='') as f:
 	writer = csv.writer(f)
 	
 	# Collect all unique timestamps from all nodes
@@ -891,7 +896,7 @@ for n in nodes:
 		plt.title(f"Battery Level Over Time - Node {n.nodeid}")
 		plt.grid(True, alpha=0.3)
 		plt.tight_layout()
-		plt.savefig(f"output/plots/battery_node_{n.nodeid}_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+		plt.savefig(f"output/plots/battery_node_{n.nodeid}_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 		plt.close()
 
 # Plot all nodes' battery levels on one graph
@@ -909,7 +914,7 @@ plt.title(f"Battery Levels Over Time - All Nodes ({conf.SELECTED_ROUTER_TYPE})")
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"output/plots/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+plt.savefig(f"output/plots/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE.name}.png", dpi=200, bbox_inches='tight')
 plt.close()
 
 print("\nSimulation complete.")
