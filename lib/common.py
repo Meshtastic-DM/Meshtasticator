@@ -331,7 +331,14 @@ def plot_schedule(conf, packets, messages):
 
 
 def move_figure(fig, x, y):
-	fig.canvas.manager.window.wm_geometry("+%d+%d" % (x, y))
+	"""Move figure window to specified position (only works with interactive backends like TkAgg)"""
+	try:
+		# Only works with GUI backends (TkAgg, Qt, etc.)
+		if hasattr(fig.canvas.manager, 'window'):
+			fig.canvas.manager.window.wm_geometry("+%d+%d" % (x, y))
+	except (AttributeError, Exception):
+		# Non-interactive backend (Agg) or window manipulation not supported
+		pass
 
 
 class Graph:
