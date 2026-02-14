@@ -5,10 +5,10 @@ This script loads reliability CSV files from multiple routing types and creates
 comprehensive comparison visualizations using bar graphs and other plots.
 
 Usage:
-    python compare_reliability.py
+    python compare_reliability.py --batch-dir batch_results_20260202_132004
     
-    Or specify custom directory:
-    python compare_reliability.py --input-dir output/
+    Or specify custom output directory:
+    python compare_reliability.py --batch-dir batch_results_20260202_132004 --output-dir output/plots
 """
 
 import pandas as pd
@@ -30,21 +30,165 @@ def load_reliability_csv(filepath):
     return df
 
 
-def compare_sensor_reliability(files_dict, output_dir="."):
+def discover_runs(batch_dir):
+    """Discover all run directories in a batch results folder."""
+    batch_path = Path(batch_dir)
+    if not batch_path.exists():
+        return []
+    
+    run_dirs = sorted([d for d in batch_path.iterdir() if d.is_dir() and d.name.startswith('run_')])
+    return run_dirs
+
+
+def aggregate_reliability_data(run_dirs, filename_pattern):
+    """
+    Load reliability data from multiple runs and compute average.
+    
+    Args:
+        run_dirs: list of Path objects pointing to run directories
+        filename_pattern: pattern to match reliability files (e.g., 'sensor_reliability')
+    
+    Returns:
+        dict of {routing_type: averaged_dataframe}
+    """
+    routing_data = {}  # {routing_type: [df1, df2, ...]}
+    
+    for run_dir in run_dirs:
+        # Search recursively in subdirectories (routing type folders)
+        for csv_file in run_dir.rglob(f"*{filename_pattern}*.csv"):
+            filename = csv_file.name
+            
+            # Extract routing type from filename
+            if "ROUTER_TYPE." in filename:
+                routing_type = filename.split("ROUTER_TYPE.")[1].replace(".csv", "")
+            else:
+                continue
+            
+            df = load_reliability_csv(csv_file)
+            if df is not None:
+                if routing_type not in routing_data:
+                    routing_data[routing_type] = []
+                routing_data[routing_type].append(df)
+    
+    # Compute averages for each routing type
+    averaged_data = {}
+    for routing_type, dfs in routing_data.items():
+        if len(dfs) == 0:
+            continue
+        
+        # Average the dataframes
+        if 'node_id' in dfs[0].columns:
+            # For sensor or broadcast reliability (node-based)
+            averaged_data[routing_type] = average_node_based_dfs(dfs)
+        else:
+            # For DM reliability matrix
+            averaged_data[routing_type] = average_matrix_dfs(dfs)
+    
+    return averaged_data
+
+
+def average_node_based_dfs(dfs):
+    """
+    Average node-based reliability dataframes from multiple runs.
+    
+    Args:
+        dfs: list of dataframes with 'node_id' column
+    
+    Returns:
+        averaged dataframe
+    """
+    if len(dfs) == 1:
+        return dfs[0]
+    
+    # Get all unique node IDs
+    all_nodes = set()
+    for df in dfs:
+        all_nodes.update(df['node_id'].dropna().astype(int).tolist())
+    all_nodes = sorted(all_nodes)
+    
+    # Determine column name for reliability
+    reliability_col = [c for c in dfs[0].columns if 'reliability' in c][0]
+    
+    # Aggregate data for each node
+    averaged_rows = []
+    for node_id in all_nodes:
+        values = []
+        for df in dfs:
+            node_data = df[df['node_id'] == node_id]
+            if len(node_data) > 0:
+                val = node_data[reliability_col].values[0]
+                if not pd.isna(val):
+                    values.append(float(val))
+        
+        if values:
+            avg_value = np.mean(values)
+            averaged_rows.append({'node_id': node_id, reliability_col: avg_value})
+        else:
+            averaged_rows.append({'node_id': node_id, reliability_col: np.nan})
+    
+    return pd.DataFrame(averaged_rows)
+
+
+def average_matrix_dfs(dfs):
+    """
+    Average matrix-based reliability dataframes from multiple runs.
+    
+    Args:
+        dfs: list of dataframes (matrices)
+    
+    Returns:
+        averaged dataframe
+    """
+    if len(dfs) == 1:
+        return dfs[0]
+    
+    # Convert all to numeric
+    numeric_dfs = []
+    for df in dfs:
+        numeric_df = df.copy()
+        for col in numeric_df.columns:
+            numeric_df[col] = pd.to_numeric(numeric_df[col], errors='coerce')
+        numeric_dfs.append(numeric_df)
+    
+    # Average the matrices
+    # Start with first matrix as template
+    result = numeric_dfs[0].copy()
+    
+    # For each cell, average across all runs
+    for idx in result.index:
+        for col in result.columns:
+            values = []
+            for df in numeric_dfs:
+                if idx in df.index and col in df.columns:
+                    val = df.loc[idx, col]
+                    if not pd.isna(val):
+                        values.append(val)
+            
+            if values:
+                result.loc[idx, col] = np.mean(values)
+            else:
+                result.loc[idx, col] = np.nan
+    
+    return result
+
+
+def compare_sensor_reliability(data_dict, output_dir=".", n_runs=0):
     """
     Compare sensor packet reliability to destination 0 across routing methods.
     
     Args:
-        files_dict: dict of {routing_name: filepath}
+        data_dict: dict of {routing_name: dataframe} (already averaged)
         output_dir: directory to save output plots
+        n_runs: number of runs averaged
     """
     print("\n" + "="*60)
     print("SENSOR PACKET RELIABILITY COMPARISON")
+    if n_runs > 0:
+        print(f"(Averaged across {n_runs} runs)")
     print("="*60)
     
     data = {}
-    for routing_name, filepath in files_dict.items():
-        df = load_reliability_csv(filepath)
+    for routing_name, df in data_dict.items():
         if df is not None:
             data[routing_name] = df
             # Convert reliability column to numeric
@@ -117,7 +261,8 @@ def compare_sensor_reliability(files_dict, output_dir="."):
     
     ax.set_xlabel('Node ID', fontsize=12, fontweight='bold')
     ax.set_ylabel('Reliability to Destination 0', fontsize=12, fontweight='bold')
-    ax.set_title('Sensor Packet Reliability Comparison (All Nodes)', fontsize=14, fontweight='bold')
+    title = 'Sensor Packet Reliability Comparison (All Nodes)'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(all_nodes, rotation=45, ha='right')
     ax.set_ylim(0, 1.1)
@@ -168,7 +313,8 @@ def compare_sensor_reliability(files_dict, output_dir="."):
         )
     
     ax.set_ylabel('Average Reliability', fontsize=12, fontweight='bold')
-    ax.set_title('Average Sensor Packet Reliability Comparison', fontsize=14, fontweight='bold')
+    title = 'Average Sensor Packet Reliability Comparison'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylim(0, 1.15)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     
@@ -226,8 +372,8 @@ def compare_sensor_reliability(files_dict, output_dir="."):
         
         ax.set_xlabel('Node ID', fontsize=12, fontweight='bold')
         ax.set_ylabel('Reliability to Destination 0', fontsize=12, fontweight='bold')
-        ax.set_title(f'Sensor Reliability Comparison (Common Nodes Only: {len(common_nodes)} nodes)',
-                     fontsize=13, fontweight='bold')
+        title = f'Sensor Reliability Comparison (Common Nodes Only: {len(common_nodes)} nodes)'
+        ax.set_title(title, fontsize=13, fontweight='bold')
         ax.set_xticks(x)
         ax.set_xticklabels(common_nodes, rotation=45, ha='right')
         ax.set_ylim(0, 1.1)
@@ -241,30 +387,29 @@ def compare_sensor_reliability(files_dict, output_dir="."):
         plt.close()
 
 
-def compare_dm_reliability(files_dict, output_dir="."):
+def compare_dm_reliability(data_dict, output_dir=".", n_runs=0):
     """
     Compare DM packet reliability matrices across routing methods.
     
     Args:
-        files_dict: dict of {routing_name: filepath}
+        data_dict: dict of {routing_name: dataframe} (already averaged)
         output_dir: directory to save output plots
+        n_runs: number of runs averaged
     """
     print("\n" + "="*60)
     print("DM PACKET RELIABILITY COMPARISON")
+    if n_runs > 0:
+        print(f"(Averaged across {n_runs} runs)")
     print("="*60)
     
     data = {}
-    for routing_name, filepath in files_dict.items():
-        if not Path(filepath).exists():
-            continue
-        
-        df = pd.read_csv(filepath, index_col=0)
-        df = df.replace('', np.nan)
-        # Convert all columns to numeric
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        data[routing_name] = df
+    for routing_name, df in data_dict.items():
+        if df is not None:
+            # Convert all columns to numeric
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            data[routing_name] = df
         
         # Calculate statistics
         values = df.values.flatten()
@@ -322,7 +467,8 @@ def compare_dm_reliability(files_dict, output_dir="."):
         )
     
     ax.set_ylabel('Average DM Reliability', fontsize=12, fontweight='bold')
-    ax.set_title('Average DM Packet Reliability Comparison', fontsize=14, fontweight='bold')
+    title = 'Average DM Packet Reliability Comparison'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylim(0, 1.15)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     
@@ -333,21 +479,23 @@ def compare_dm_reliability(files_dict, output_dir="."):
     plt.close()
 
 
-def compare_broadcast_reliability(files_dict, output_dir="."):
+def compare_broadcast_reliability(data_dict, output_dir=".", n_runs=0):
     """
     Compare broadcast packet reliability across routing methods.
     
     Args:
-        files_dict: dict of {routing_name: filepath}
+        data_dict: dict of {routing_name: dataframe} (already averaged)
         output_dir: directory to save output plots
+        n_runs: number of runs averaged
     """
     print("\n" + "="*60)
     print("BROADCAST PACKET RELIABILITY COMPARISON")
+    if n_runs > 0:
+        print(f"(Averaged across {n_runs} runs)")
     print("="*60)
     
     data = {}
-    for routing_name, filepath in files_dict.items():
-        df = load_reliability_csv(filepath)
+    for routing_name, df in data_dict.items():
         if df is not None:
             data[routing_name] = df
             # Convert reliability column to numeric
@@ -400,7 +548,8 @@ def compare_broadcast_reliability(files_dict, output_dir="."):
         )
     
     ax.set_ylabel('Average Broadcast Reliability', fontsize=12, fontweight='bold')
-    ax.set_title('Average Broadcast Packet Reliability Comparison', fontsize=14, fontweight='bold')
+    title = 'Average Broadcast Packet Reliability Comparison'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylim(0, 1.15)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     
@@ -413,14 +562,14 @@ def compare_broadcast_reliability(files_dict, output_dir="."):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare reliability metrics between routing methods",
+        description="Compare reliability metrics between routing methods (averaged across multiple runs)",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(
-        "--input-dir",
-        default="output",
-        help="Directory containing reliability CSV files (default: output)"
+        "--batch-dir",
+        required=True,
+        help="Batch results directory containing run_001, run_002, etc. subdirectories"
     )
     parser.add_argument(
         "--output-dir",
@@ -430,74 +579,68 @@ def main():
     
     args = parser.parse_args()
     
-    input_dir = Path(args.input_dir)
-    if not input_dir.exists():
-        print(f"Error: Input directory '{input_dir}' does not exist!")
+    batch_dir = Path(args.batch_dir)
+    if not batch_dir.exists():
+        print(f"Error: Batch directory '{batch_dir}' does not exist!")
         sys.exit(1)
     
-    # Auto-detect reliability files
-    sensor_files = {}
-    dm_files = {}
-    broadcast_files = {}
-    
-    for csv_file in input_dir.glob("*reliability*.csv"):
-        filename = csv_file.name
-        
-        # Extract routing type from filename
-        # Expected format: <type>_reliability_<metric>_ROUTER_TYPE.<routing>.csv
-        if "ROUTER_TYPE." in filename:
-            routing_type = filename.split("ROUTER_TYPE.")[1].replace(".csv", "")
-        else:
-            continue
-        
-        if "sensor_reliability" in filename:
-            sensor_files[routing_type] = str(csv_file)
-        elif "dm_reliability_matrix" in filename:
-            dm_files[routing_type] = str(csv_file)
-        elif "broadcast_reliability" in filename:
-            broadcast_files[routing_type] = str(csv_file)
-    
-    if not sensor_files and not dm_files and not broadcast_files:
-        print(f"No reliability CSV files found in '{input_dir}'!")
-        print("\nExpected file patterns:")
-        print("  - sensor_reliability_to_dest0_ROUTER_TYPE.<routing>.csv")
-        print("  - dm_reliability_matrix_ROUTER_TYPE.<routing>.csv")
-        print("  - broadcast_reliability_ROUTER_TYPE.<routing>.csv")
+    # Discover all run directories
+    run_dirs = discover_runs(batch_dir)
+    if not run_dirs:
+        print(f"Error: No run directories (run_001, run_002, etc.) found in '{batch_dir}'!")
         sys.exit(1)
     
     print("="*60)
     print("RELIABILITY COMPARISON TOOL")
     print("="*60)
-    print(f"\nInput directory: {input_dir.resolve()}")
+    print(f"\nBatch directory: {batch_dir.resolve()}")
+    print(f"Found {len(run_dirs)} run(s):")
+    for run_dir in run_dirs:
+        print(f"  - {run_dir.name}")
     
     # Create output directory if it doesn't exist
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir.resolve()}")
     
+    # Aggregate reliability data from all runs
+    print("\nAggregating data from all runs...")
+    sensor_data = aggregate_reliability_data(run_dirs, "sensor_reliability")
+    dm_data = aggregate_reliability_data(run_dirs, "dm_reliability_matrix")
+    broadcast_data = aggregate_reliability_data(run_dirs, "broadcast_reliability")
+    
+    if not sensor_data and not dm_data and not broadcast_data:
+        print("\nError: No reliability CSV files found in run directories!")
+        print("\nExpected file patterns in each run directory:")
+        print("  - sensor_reliability_to_dest0_ROUTER_TYPE.<routing>.csv")
+        print("  - dm_reliability_matrix_ROUTER_TYPE.<routing>.csv")
+        print("  - broadcast_reliability_ROUTER_TYPE.<routing>.csv")
+        sys.exit(1)
+    
     # Compare each metric type
-    if sensor_files:
-        print(f"\nFound sensor reliability files:")
-        for routing, path in sensor_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_sensor_reliability(sensor_files, args.output_dir)
+    if sensor_data:
+        print(f"\nFound sensor reliability data for routing types:")
+        for routing in sensor_data.keys():
+            print(f"  - {routing}")
+        compare_sensor_reliability(sensor_data, args.output_dir, len(run_dirs))
     
-    if dm_files:
-        print(f"\nFound DM reliability files:")
-        for routing, path in dm_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_dm_reliability(dm_files, args.output_dir)
+    if dm_data:
+        print(f"\nFound DM reliability data for routing types:")
+        for routing in dm_data.keys():
+            print(f"  - {routing}")
+        compare_dm_reliability(dm_data, args.output_dir, len(run_dirs))
     
-    if broadcast_files:
-        print(f"\nFound broadcast reliability files:")
-        for routing, path in broadcast_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_broadcast_reliability(broadcast_files, args.output_dir)
+    if broadcast_data:
+        print(f"\nFound broadcast reliability data for routing types:")
+        for routing in broadcast_data.keys():
+            print(f"  - {routing}")
+        compare_broadcast_reliability(broadcast_data, args.output_dir, len(run_dirs))
     
     print("\n" + "="*60)
     print("COMPARISON COMPLETE!")
     print("="*60)
     print(f"\nAll plots saved to: {Path(args.output_dir).resolve()}")
+    print(f"Results averaged across {len(run_dirs)} run(s)")
 
 
 if __name__ == "__main__":
