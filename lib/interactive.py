@@ -196,6 +196,7 @@ class InteractiveGraph(Graph):
             self.annots.remove(ann)
 
     def plot_route(self, messageId):
+        sim_port = p.packet.get("decoded", {}).get("simulator", {}).get("portnum", "ENCRYPTED")
         if self.firstTime:
             print('Hover over an arc to show some info and click to remove it afterwards.')
             print('Close the window to exit the simulator.')
@@ -241,7 +242,7 @@ class InteractiveGraph(Graph):
                         else:
                             msgType = "Original message"
                     elif "requestId" in p.packet["decoded"]:
-                        if p.packet["decoded"]["simulator"]["portnum"] == "ROUTING_APP":
+                        if sim_port == "ROUTING_APP":
                             msgType = "Forwarding\/real\/ACK"
                         else:
                             msgType = "Forwarding\/response"
@@ -259,7 +260,7 @@ class InteractiveGraph(Graph):
                     fields = [ r"$\bf{" + msgType + "}$"
                              , f"Original sender: {p.packet['from'] - HW_ID_OFFSET}"
                              , f"Destination: {to}"
-                             , f"Portnum: {p.packet['decoded']['simulator']['portnum']}"
+                             , f"Portnum: {sim_port}"
                              , f"HopLimit: {hopLimit}" if hopLimit else ""
                              , f"RSSI: {round(p.rssis[ri], 2)} dBm"
                              ]
@@ -660,14 +661,47 @@ class InteractiveSim:
         return meshPacket
 
     def forward_packet(self, receivers, packet, rssis, snrs):
+        meshPacket = mesh_pb2.MeshPacket()
+
+        # Common header fields
+        meshPacket.to = packet["to"]
+        setattr(meshPacket, "from", packet["from"])
+        meshPacket.id = packet["id"]
+        meshPacket.relay_node = packet.get("relayNode", meshPacket.relay_node)
+        meshPacket.next_hop = packet.get("nextHop", meshPacket.next_hop)
+        meshPacket.want_ack = packet.get("wantAck", meshPacket.want_ack)
+        meshPacket.hop_limit = packet.get("hopLimit", meshPacket.hop_limit)
+        meshPacket.hop_start = packet.get("hopStart", meshPacket.hop_start)
+        meshPacket.via_mqtt = packet.get("viaMQTT", meshPacket.via_mqtt)
+        meshPacket.channel = int(packet.get("channel", meshPacket.channel))
+
         data = packet["decoded"]["payload"]
         if getattr(data, "SerializeToString", None):
             data = data.SerializeToString()
 
-        if len(data) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
-            raise Exception("Data payload too big")
+        # If SimRadio wrapped plaintext, keep old behavior
+        sim = packet["decoded"].get("simulator", {})
+        sim_port = sim.get("portnum")
 
-        meshPacket = self.packet_from_packet(packet, data, portnums_pb2.SIMULATOR_APP)
+        if sim_port != "UNKNOWN_APP":
+            # Normal path: forward SIMULATOR_APP wrapper
+            if len(data) > mesh_pb2.Constants.DATA_PAYLOAD_LEN:
+                raise Exception("Data payload too big")
+
+            meshPacket.decoded.payload = data
+            meshPacket.decoded.portnum = portnums_pb2.SIMULATOR_APP
+            meshPacket.decoded.request_id = packet["decoded"].get("requestId", meshPacket.decoded.request_id)
+            meshPacket.decoded.want_response = packet["decoded"].get("wantResponse", meshPacket.decoded.want_response)
+
+        else:
+            # Ciphertext path: UNKNOWN_APP => data is ciphertext bytes (no 0xEE flag)
+            cipher = data
+            if not cipher:
+                return
+
+            meshPacket.encrypted = cipher       # sets the oneof correctly
+            meshPacket.pki_encrypted = True     # optional hint
+
         for i, rx in enumerate(receivers):
             meshPacket.rx_rssi = int(rssis[i])
             meshPacket.rx_snr = snrs[i]
@@ -678,13 +712,49 @@ class InteractiveSim:
             except Exception as ex:
                 print(f"Error sending packet to radio!! ({ex})")
 
+
     def copy_packet(self, packet):
-        # print(packet)
         time.sleep(0.01)
         try:
-            if 'simulator' in packet or packet["decoded"]["portnum"] == "SIMULATOR_APP":
+            # ORIGINAL: drop packets that already have simulator dict injected
+            if 'simulator' in packet:
                 return None
 
+            # ORIGINAL: drop simulator wrapper packets
+            if packet.get("decoded", {}).get("portnum") == "SIMULATOR_APP":
+                return None
+
+            # --- NEW: handle ciphertext packets (not decoded) ---
+            # Depending on meshtastic python dict shape, encrypted bytes may appear as:
+            #   packet["encrypted"]  (bytes)
+            # or packet may have no "decoded" at all.
+            if "decoded" not in packet or packet.get("decoded") is None:
+                cipher = packet.get("encrypted", b"")
+                if getattr(cipher, "SerializeToString", None):
+                    cipher = cipher.SerializeToString()
+                if not cipher:
+                    return None
+
+                mp = mesh_pb2.MeshPacket()
+                mp.to = packet["to"]
+                setattr(mp, "from", packet["from"])
+                mp.id = packet["id"]
+                mp.relay_node = packet.get("relayNode", mp.relay_node)
+                mp.next_hop = packet.get("nextHop", mp.next_hop)
+                mp.want_ack = packet.get("wantAck", mp.want_ack)
+                mp.hop_limit = packet.get("hopLimit", mp.hop_limit)
+                mp.hop_start = packet.get("hopStart", mp.hop_start)
+                mp.via_mqtt = packet.get("viaMQTT", mp.via_mqtt)
+                mp.channel = int(packet.get("channel", mp.channel))
+
+                mp.encrypted = cipher
+                mp.pki_encrypted = True  # optional hint (safe)
+
+                fr = mesh_pb2.FromRadio()
+                fr.packet.CopyFrom(mp)
+                return fr
+
+            # --- ORIGINAL decoded path (unchanged) ---
             data = packet["decoded"]["payload"]
             if getattr(data, "SerializeToString", None):
                 data = data.SerializeToString()
@@ -693,8 +763,11 @@ class InteractiveSim:
             fromRadio = mesh_pb2.FromRadio()
             fromRadio.packet.CopyFrom(meshPacket)
             return fromRadio
+
         except Exception:
             return None
+
+
 
     def showNodes(self, id=None):
         if id is not None:
@@ -765,7 +838,9 @@ class InteractiveSim:
         self.messages.append(rP)
 
         if self.script:
-            print(f"Node {interface.myInfo.my_node_num-HW_ID_OFFSET} sent {packet['decoded']['simulator']['portnum']} with id {mId} over the air!")
+            pnum = packet["decoded"].get("simulator", {}).get("portnum", "UNKNOWN")
+            print(f"Node {interface.myInfo.my_node_num-HW_ID_OFFSET} sent {pnum} with id {mId} over the air!")
+
 
         transmitter = next((n for n in self.nodes if n.TCPPort == interface.portNumber), None)
         if transmitter is not None:
