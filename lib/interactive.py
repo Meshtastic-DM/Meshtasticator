@@ -196,7 +196,6 @@ class InteractiveGraph(Graph):
             self.annots.remove(ann)
 
     def plot_route(self, messageId):
-        sim_port = p.packet.get("decoded", {}).get("simulator", {}).get("portnum", "ENCRYPTED")
         if self.firstTime:
             print('Hover over an arc to show some info and click to remove it afterwards.')
             print('Close the window to exit the simulator.')
@@ -207,6 +206,7 @@ class InteractiveGraph(Graph):
             style = "Simple, tail_width=0.5, head_width=4, head_length=8"
             pairs = dict.fromkeys(list(set(p.transmitter for p in packets)), [])
             for p in packets:
+                sim_port = p.packet.get("decoded", {}).get("simulator", {}).get("portnum", "ENCRYPTED")
                 tx = p.transmitter
                 rxs = p.receivers
                 rxCnt = 1
