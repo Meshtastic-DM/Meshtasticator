@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package meshtastic;
+
+option csharp_namespace = "Meshtastic.Protobufs";
+option go_package = "github.com/meshtastic/go/generated";
+option java_outer_classname = "AODVProtos";
+option java_package = "org.meshtastic.proto";
+option swift_prefix = "";
+
+/*
+ * AODV (Ad-hoc On-Demand Distance Vector) Routing Protocol Messages
+ * Used for dynamic route discovery in mesh networks
+ */
+
+/*
+ * Route Request (RREQ) message
+ * Broadcast when a node needs to find a route to a destination
+ */
+message RouteRequest {
+  /*
+   * Unique identifier for this RREQ, incremented by originator
+   */
+  uint32 rreq_id = 1;
+
+  /*
+   * Node that originated this route request
+   */
+  uint32 originator = 2;
+
+  /*
+   * Sequence number of the originator (for loop prevention)
+   */
+  uint32 originator_seq_num = 3;
+
+  /*
+   * Destination node we're trying to reach
+   */
+  uint32 destination = 4;
+
+  /*
+   * Last known sequence number for destination (0 if unknown)
+   */
+  uint32 dest_seq_num = 5;
+
+  /*
+   * Number of hops from originator to current node
+   */
+  uint32 hop_count = 6;
+}
+
+/*
+ * Route Reply (RREP) message
+ * Unicast back to originator when destination or intermediate node has route
+ */
+message RouteReply {
+  /*
+   * Node that originated the RREQ this is replying to
+   */
+  uint32 originator = 1;
+
+  /*
+   * Destination node this reply is about
+   */
+  uint32 destination = 2;
+
+  /*
+   * Sequence number of the destination
+   */
+  uint32 dest_seq_num = 3;
+
+  /*
+   * Number of hops from replying node to destination
+   */
+  uint32 hop_count = 4;
+
+  /*
+   * Lifetime of this route in seconds
+   */
+  uint32 lifetime = 5;
+}
+
+/*
+ * Route Error (RERR) message
+ * Sent when a link break is detected to invalidate routes
+ */
+message RouteError {
+  /*
+   * List of unreachable destinations
+   */
+  repeated UnreachableNode unreachable_destinations = 1;
+}
+
+/*
+ * Information about a single unreachable node
+ */
+message UnreachableNode {
+  /*
+   * Node that is unreachable
+   */
+    uint32 node_num = 1;
+
+  /*
+   * Sequence number when route became invalid
+   */
+  uint32 seq_num = 2;
+}
+
+/*
+ * Route Table Query Request
+ * Sent to request a node's routing table
+ */
+message RouteTableRequest {
+  /*
+   * Request ID for matching request/response
+   */
+  uint32 request_id = 1;
+}
+
+/*
+ * Single route entry in the routing table
+ */
+message RouteEntry {
+  /*
+   * Destination node number (full 32-bit)
+   */
+  uint32 destination = 1;
+
+  /*
+   * Next hop node number (full 32-bit)
+   */
+  uint32 next_hop = 2;
+
+  /*
+   * Number of hops to destination
+   */
+  uint32 hop_count = 3;
+
+  /*
+   * Destination sequence number
+   */
+  uint32 destination_seq_num = 4;
+
+  /*
+   * Route lifetime/expiry in seconds
+   */
+  uint32 lifetime = 5;
+
+  /*
+   * Whether this route is valid
+   */
+  bool valid = 6;
+}
+
+/*
+ * Route Table Response
+ * Contains the node's current routing table
+ */
+message RouteTableResponse {
+  /*
+   * Request ID matching the request
+   */
+  uint32 request_id = 1;
+
+  /*
+   * List of routes in the routing table
+   */
+  repeated RouteEntry routes = 2;
+}
+
+/*
+ * AODV routing message (top-level wrapper)
+ */
+message AODV {
+  oneof variant {
+    RouteRequest rreq = 1;
+    RouteReply rrep = 2;
+    RouteError rerr = 3;
+    RouteTableRequest rt_request = 4;
+    RouteTableResponse rt_response = 5;
+  }
+}
