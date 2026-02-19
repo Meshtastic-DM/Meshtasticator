@@ -145,6 +145,7 @@ class Config:
         self.Packet_Version = 2 # 1 for original, 2 for AODV
 
         ####### Power Consumption Model Parameters ########
+        self.Enable_Battery_Drain = False  # Set to True to enable battery drain simulation
         self.Tx_Powr = 0.4125  # Power consumption in W for transmitting
         self.Rx_Powr = 0.0136    # Power consumption in W for receiving
         self.Idle_Powr = 0.0825 # Power consumption in W for idle state

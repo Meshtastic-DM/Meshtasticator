@@ -99,7 +99,8 @@ class MeshNode:
         env.process(self.receive(self.bc_pipe.get_output_conn()))
         self.transmitter = simpy.Resource(env, 1)
 
-        env.process(self.track_battery_level(env))
+        if self.conf.Enable_Battery_Drain:
+            env.process(self.track_battery_level(env))
 
         # start mobility if enabled
         if self.conf.MOVEMENT_ENABLED and self.moveRng.random() <= self.conf.APPROX_RATIO_NODES_MOVING:
