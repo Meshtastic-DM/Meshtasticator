@@ -5,10 +5,10 @@ This script loads delay CSV files from multiple routing types and creates
 comprehensive delay comparison visualizations using box plots, violin plots, and bar charts.
 
 Usage:
-    python compare_delays.py
+    python compare_delays.py --batch-dir batch_results_20260202_132004
     
-    Or specify custom directory:
-    python compare_delays.py --input-dir output/
+    Or specify custom output directory:
+    python compare_delays.py --batch-dir batch_results_20260202_132004 --output-dir output/plots
 """
 
 import pandas as pd
@@ -45,24 +45,83 @@ def load_delay_csv(filepath):
     return df
 
 
-def compare_delays_overview(files_dict, packet_type, output_dir="."):
+def discover_runs(batch_dir):
+    """Discover all run directories in a batch results folder."""
+    batch_path = Path(batch_dir)
+    if not batch_path.exists():
+        return []
+    
+    run_dirs = sorted([d for d in batch_path.iterdir() if d.is_dir() and d.name.startswith('run_')])
+    return run_dirs
+
+
+def aggregate_delay_data(run_dirs, filename_pattern):
+    """
+    Load delay data from multiple runs and aggregate.
+    
+    Args:
+        run_dirs: list of Path objects pointing to run directories
+        filename_pattern: pattern to match delay files (e.g., 'sensor_packets')
+    
+    Returns:
+        dict of {routing_type: concatenated_dataframe}
+    """
+    routing_data = {}  # {routing_type: [df1, df2, ...]}
+    
+    for run_dir in run_dirs:
+        # Search recursively in subdirectories (routing type folders)
+        for csv_file in run_dir.rglob(f"*{filename_pattern}*.csv"):
+            filename = csv_file.name
+            
+            # Skip reliability files
+            if "reliability" in filename:
+                continue
+            
+            # Extract routing type from parent directory name (most reliable)
+            # Files are organized as: run_XXX/ROUTING_TYPE/file_ROUTING_TYPE.csv
+            parent_dir = csv_file.parent.name
+            
+            # If parent is a run directory, skip (file is in wrong location)
+            if parent_dir.startswith('run_'):
+                continue
+            
+            # Use parent directory as routing type
+            routing_type = parent_dir
+            
+            df = load_delay_csv(csv_file)
+            if df is not None:
+                if routing_type not in routing_data:
+                    routing_data[routing_type] = []
+                routing_data[routing_type].append(df)
+    
+    # Concatenate all dataframes for each routing type
+    aggregated_data = {}
+    for routing_type, dfs in routing_data.items():
+        if len(dfs) > 0:
+            # Concatenate all runs together
+            aggregated_data[routing_type] = pd.concat(dfs, ignore_index=True)
+    
+    return aggregated_data
+
+
+def compare_delays_overview(data_dict, packet_type, output_dir=".", num_runs=1):
     """
     Create overview comparison of delays across routing methods.
     
     Args:
-        files_dict: dict of {routing_name: filepath}
+        data_dict: dict of {routing_name: dataframe}
         packet_type: 'sensor', 'dm', or 'broadcast'
         output_dir: directory to save output plots
+        num_runs: number of runs aggregated
     """
     print(f"\n{'='*60}")
     print(f"{packet_type.upper()} PACKET DELAY COMPARISON")
+    print(f"(Aggregated across {num_runs} runs)")
     print(f"{'='*60}")
     
-    data = {}
-    for routing_name, filepath in files_dict.items():
-        df = load_delay_csv(filepath)
+    data = data_dict
+    for routing_name, df in data_dict.items():
         if df is not None and len(df) > 0:
-            data[routing_name] = df
             delays = df['delay_value']
             print(f"\nLoaded {routing_name}: {len(df)} packets")
             print(f"  Mean delay: {delays.mean():.2f} ms")
@@ -260,7 +319,7 @@ def compare_delays_overview(files_dict, packet_type, output_dir="."):
     plt.close()
 
 
-def create_summary_comparison(sensor_files, dm_files, broadcast_files, output_dir="."):
+def create_summary_comparison(sensor_data, dm_data, broadcast_data, output_dir="."):
     """Create a single summary plot comparing all packet types and routing methods."""
     print(f"\n{'='*60}")
     print("OVERALL DELAY SUMMARY")
@@ -269,11 +328,10 @@ def create_summary_comparison(sensor_files, dm_files, broadcast_files, output_di
     all_data = {}
     
     # Load all data
-    for packet_type, files_dict in [('Sensor', sensor_files), ('DM', dm_files), ('Broadcast', broadcast_files)]:
-        if not files_dict:
+    for packet_type, data_dict in [('Sensor', sensor_data), ('DM', dm_data), ('Broadcast', broadcast_data)]:
+        if not data_dict:
             continue
-        for routing_name, filepath in files_dict.items():
-            df = load_delay_csv(filepath)
+        for routing_name, df in data_dict.items():
             if df is not None and len(df) > 0:
                 key = f"{packet_type}\n{routing_name}"
                 all_data[key] = df['delay_value'].values
@@ -352,9 +410,9 @@ def main():
     )
     
     parser.add_argument(
-        "--input-dir",
-        default="output",
-        help="Directory containing delay CSV files (default: output)"
+        "--batch-dir",
+        required=True,
+        help="Batch results directory containing run subdirectories (e.g., batch_results_20260202_132004)"
     )
     parser.add_argument(
         "--output-dir",
@@ -364,80 +422,71 @@ def main():
     
     args = parser.parse_args()
     
-    input_dir = Path(args.input_dir)
-    if not input_dir.exists():
-        print(f"Error: Input directory '{input_dir}' does not exist!")
+    batch_dir = Path(args.batch_dir)
+    if not batch_dir.exists():
+        print(f"Error: Batch directory '{batch_dir}' does not exist!")
         sys.exit(1)
     
-    # Auto-detect delay files
-    sensor_files = {}
-    dm_files = {}
-    broadcast_files = {}
-    
-    for csv_file in input_dir.glob("*packets*.csv"):
-        filename = csv_file.name
-        
-        # Skip reliability files
-        if "reliability" in filename:
-            continue
-        
-        # Extract routing type from filename
-        if "ROUTER_TYPE." in filename:
-            routing_type = filename.split("ROUTER_TYPE.")[1].replace(".csv", "")
-        else:
-            continue
-        
-        if "sensor_packets" in filename:
-            sensor_files[routing_type] = str(csv_file)
-        elif "dm_packets" in filename:
-            dm_files[routing_type] = str(csv_file)
-        elif "broadcast_packets" in filename:
-            broadcast_files[routing_type] = str(csv_file)
-    
-    if not sensor_files and not dm_files and not broadcast_files:
-        print(f"No delay CSV files found in '{input_dir}'!")
-        print("\nExpected file patterns:")
-        print("  - sensor_packets_ROUTER_TYPE.<routing>.csv")
-        print("  - dm_packets_ROUTER_TYPE.<routing>.csv")
-        print("  - broadcast_packets_ROUTER_TYPE.<routing>.csv")
+    # Discover all run directories
+    run_dirs = discover_runs(batch_dir)
+    if not run_dirs:
+        print(f"Error: No run directories (run_001, run_002, etc.) found in '{batch_dir}'!")
         sys.exit(1)
     
     print("="*60)
     print("DELAY COMPARISON TOOL")
     print("="*60)
-    print(f"\nInput directory: {input_dir.resolve()}")
+    print(f"\nBatch directory: {batch_dir.resolve()}")
+    print(f"Found {len(run_dirs)} run(s):")
+    for run_dir in run_dirs:
+        print(f"  - {run_dir.name}")
     
     # Create output directory if it doesn't exist
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir.resolve()}")
     
+    # Aggregate delay data from all runs
+    print("\nAggregating data from all runs...")
+    sensor_data = aggregate_delay_data(run_dirs, "sensor_packets")
+    dm_data = aggregate_delay_data(run_dirs, "dm_packets")
+    broadcast_data = aggregate_delay_data(run_dirs, "broadcast_packets")
+    
+    if not sensor_data and not dm_data and not broadcast_data:
+        print("\nError: No delay CSV files found in run directories!")
+        print("\nExpected file patterns in each run directory:")
+        print("  - sensor_packets_<routing>.csv")
+        print("  - dm_packets_<routing>.csv")
+        print("  - broadcast_packets_<routing>.csv")
+        sys.exit(1)
+    
     # Compare each packet type
-    if sensor_files:
-        print(f"\nFound sensor packet files:")
-        for routing, path in sensor_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_delays_overview(sensor_files, "sensor", args.output_dir)
+    if sensor_data:
+        print(f"\nFound sensor delay data for routing types:")
+        for routing in sensor_data.keys():
+            print(f"  - {routing}")
+        compare_delays_overview(sensor_data, "sensor", args.output_dir, len(run_dirs))
     
-    if dm_files:
-        print(f"\nFound DM packet files:")
-        for routing, path in dm_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_delays_overview(dm_files, "dm", args.output_dir)
+    if dm_data:
+        print(f"\nFound DM delay data for routing types:")
+        for routing in dm_data.keys():
+            print(f"  - {routing}")
+        compare_delays_overview(dm_data, "dm", args.output_dir, len(run_dirs))
     
-    if broadcast_files:
-        print(f"\nFound broadcast packet files:")
-        for routing, path in broadcast_files.items():
-            print(f"  - {routing}: {Path(path).name}")
-        compare_delays_overview(broadcast_files, "broadcast", args.output_dir)
+    if broadcast_data:
+        print(f"\nFound broadcast delay data for routing types:")
+        for routing in broadcast_data.keys():
+            print(f"  - {routing}")
+        compare_delays_overview(broadcast_data, "broadcast", args.output_dir, len(run_dirs))
     
     # Create overall summary
-    create_summary_comparison(sensor_files, dm_files, broadcast_files, args.output_dir)
+    create_summary_comparison(sensor_data, dm_data, broadcast_data, args.output_dir)
     
     print("\n" + "="*60)
     print("DELAY COMPARISON COMPLETE!")
     print("="*60)
     print(f"\nAll plots saved to: {Path(args.output_dir).resolve()}")
+    print(f"Results aggregated across {len(run_dirs)} run(s)")
 
 
 if __name__ == "__main__":

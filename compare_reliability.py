@@ -72,11 +72,16 @@ def aggregate_reliability_data(run_dirs, filename_pattern):
         for csv_file in run_dir.rglob(f"*{filename_pattern}*.csv"):
             filename = csv_file.name
             
-            # Extract routing type from filename
-            if "ROUTER_TYPE." in filename:
-                routing_type = filename.split("ROUTER_TYPE.")[1].replace(".csv", "")
-            else:
+            # Extract routing type from parent directory name (most reliable)
+            # Files are organized as: run_XXX/ROUTING_TYPE/file_ROUTING_TYPE.csv
+            parent_dir = csv_file.parent.name
+            
+            # If parent is a run directory, skip (file is in wrong location)
+            if parent_dir.startswith('run_'):
                 continue
+            
+            # Use parent directory as routing type
+            routing_type = parent_dir
             
             df = load_reliability_csv(csv_file)
             if df is not None:
