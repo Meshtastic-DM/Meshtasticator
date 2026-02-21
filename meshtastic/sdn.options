@@ -3,3 +3,6 @@
 
 meshtastic.SDNAnnouncement.hmac_hash max_size:16
 meshtastic.SDNAnnouncement.public_key max_size:32
+
+# Route installation confirmation error message
+meshtastic.SDNRouteSetConfirm.error_msg max_length:40

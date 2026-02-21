@@ -87,6 +87,81 @@ message SDNRouteCommand {
 }
 
 /**
+ * Route installation command sent by SDN controller to start node
+ * Initiates cascading route setup through hop-by-hop forwarding
+ */
+message SDNRouteInstall {
+    /**
+     * Final destination node (32-bit full node number)
+     */
+    fixed32 destination = 1;
+
+    /**
+     * Packed hop path: 8 bytes, each byte is one hop (1-byte node ID)
+     * LSB = first hop, zero bytes mark end of path
+     */
+    fixed64 hop_path = 2;
+
+    /**
+     * Installation ID for tracking (0-255)
+     */
+    uint32 install_id = 3;
+}
+
+/**
+ * Route set message propagated hop-by-hop from start to destination
+ * Each intermediate node installs forward and reverse routes
+ */
+message SDNRouteSet {
+    /**
+     * Final destination node (32-bit full node number)
+     */
+    fixed32 destination = 1;
+
+    /**
+     * Packed hop path: remaining hops to traverse
+     * Path is shifted at each hop (first hop removed)
+     */
+    fixed64 hop_path = 2;
+
+    /**
+     * Installation ID for tracking (0-255)
+     */
+    uint32 install_id = 3;
+
+    /**
+     * Start node's AODV sequence number for reverse route installation
+     */
+    uint32 dest_seq_num = 4;
+}
+
+/**
+ * Confirmation sent by destination back to controller
+ * Reports success or failure of route installation
+ */
+message SDNRouteSetConfirm {
+    /**
+     * Destination node that was reached (32-bit full node number)
+     */
+    fixed32 destination = 1;
+
+    /**
+     * Installation ID to correlate with original request
+     */
+    uint32 install_id = 2;
+
+    /**
+     * True if route installation succeeded
+     */
+    bool success = 3;
+
+    /**
+     * Optional error message if installation failed
+     */
+    string error_msg = 4;
+}
+
+/**
  * SDN message wrapper
  */
 message SDN {
@@ -97,5 +172,8 @@ message SDN {
         SDNAnnouncement announcement = 1;
         SDNRouteUpdate route_update = 2;
         SDNRouteCommand route_command = 3;
+        SDNRouteInstall route_install = 4;
+        SDNRouteSet route_set = 5;
+        SDNRouteSetConfirm route_set_confirm = 6;
     }
 }
