@@ -71,6 +71,22 @@ message SDNRouteUpdate {
 }
 
 /**
+ * Route command sent by SDN controller to activate a backup path
+ * Tells a node to switch its active route for a destination to use a specific next hop
+ */
+message SDNRouteCommand {
+    /**
+     * Destination node to switch route for (32-bit full node number)
+     */
+    fixed32 destination = 1;
+
+    /**
+     * Next hop to activate as primary path (8-bit last byte)
+     */
+    uint32 next_hop = 2;
+}
+
+/**
  * SDN message wrapper
  */
 message SDN {
@@ -80,5 +96,6 @@ message SDN {
     oneof payload_variant {
         SDNAnnouncement announcement = 1;
         SDNRouteUpdate route_update = 2;
+        SDNRouteCommand route_command = 3;
     }
 }
