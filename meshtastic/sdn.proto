@@ -128,11 +128,6 @@ message SDNRouteSet {
      * Installation ID for tracking (0-255)
      */
     uint32 install_id = 3;
-
-    /**
-     * Start node's AODV sequence number for reverse route installation
-     */
-    uint32 dest_seq_num = 4;
 }
 
 /**
