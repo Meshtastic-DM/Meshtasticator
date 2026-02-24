@@ -16,7 +16,7 @@ import yaml
 from pathlib import Path
 
 
-def generate_random_topology(num_dm, num_sensor, num_router, 
+def generate_random_topology(num_dm_v, num_dm_r, num_sensor, num_router, 
                             x_low=-2000, x_high=2000, 
                             y_low=-2000, y_high=2000,
                             z_default=1.0, router_z=2.0,
@@ -29,7 +29,8 @@ def generate_random_topology(num_dm, num_sensor, num_router,
     Generate random node positions for network topology.
     
     Args:
-        num_dm: Number of DM (Decision Maker) nodes
+        num_dm_v: Number of DM Victim nodes
+        num_dm_r: Number of DM Rescue nodes
         num_sensor: Number of Sensor nodes
         num_router: Number of Router nodes
         x_low: Minimum x coordinate
@@ -101,15 +102,15 @@ def generate_random_topology(num_dm, num_sensor, num_router,
     positions.append((0.0, 0.0))
     node_id += 1
     
-    # Generate DM nodes
-    for i in range(num_dm):
+    # Generate DM Victim nodes
+    for i in range(num_dm_v):
         x, y, z = generate_position(z_default)
         startingBattery = round(random.uniform(battery_min, battery_max), 1)
         nodes[node_id] = {
             'x': x,
             'y': y,
             'z': z,
-            'simRole': 'DM',
+            'simRole': 'DM_Victim',
             'antennaGain': 0.0,
             'hopLimit': 7,
             'isClientMute': False,
@@ -120,6 +121,23 @@ def generate_random_topology(num_dm, num_sensor, num_router,
         }
         node_id += 1
     
+    for i in range(num_dm_r):
+        x, y, z = generate_position(z_default)
+        startingBattery = round(random.uniform(battery_min, battery_max), 1)
+        nodes[node_id] = {
+            'x': x,
+            'y': y,
+            'z': z,
+            'simRole': 'DM_Rescue',
+            'antennaGain': 0.0,
+            'hopLimit': 7,
+            'isClientMute': False,
+            'isRepeater': False,
+            'isRouter': False,
+            'neighborInfo': False,
+            'StartingBatteryCapacityJ': startingBattery
+        }
+        node_id += 1
     # Generate Sensor nodes
     for i in range(num_sensor):
         x, y, z = generate_position(z_default)
@@ -256,20 +274,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate default topology (11 DM, 11 Sensor, 2 Router)
+  # Generate default topology (11 DM Victim, 11 DM Rescue, 11 Sensor, 2 Router)
   python generate_topology.py
   
   # Generate from YAML parameter file
   python generate_topology.py --input-params topology_params.yaml
   
   # Generate custom topology with specific bounds
-  python generate_topology.py --dm 15 --sensor 20 --router 3 --x-low -3000 --x-high 3000
+  python generate_topology.py --dm-v 15 --dm-r 5 --sensor 20 --router 3 --x-low -3000 --x-high 3000
   
   # Generate topology with custom output file
-  python generate_topology.py --dm 10 --sensor 10 --router 2 --output custom_topology.yaml
+  python generate_topology.py --dm-v 10 --dm-r 5 --sensor 10 --router 2 --output custom_topology.yaml
   
   # Generate reproducible topology with seed
-  python generate_topology.py --dm 10 --sensor 15 --seed 42
+  python generate_topology.py --dm-v 10 --dm-r 5 --sensor 15 --seed 42
         """
     )
     
@@ -278,10 +296,12 @@ Examples:
                        help='YAML file with generation parameters (overrides other arguments)')
     
     # Node counts
-    parser.add_argument('--dm', type=int, default=11,
-                       help='Number of DM (Decision Maker) nodes (default: 11)')
+    parser.add_argument('--dm-v', type=int, default=11,
+                       help='Number of DM Victim nodes (default: 15)')
+    parser.add_argument('--dm-r', type=int, default=0,
+                       help='Number of DM Rescue nodes (default: 7)')
     parser.add_argument('--sensor', type=int, default=11,
-                       help='Number of Sensor nodes (default: 11)')
+                       help='Number of Sensor nodes (default: 0)')
     parser.add_argument('--router', type=int, default=2,
                        help='Number of Router nodes (default: 2)')
     
@@ -326,7 +346,8 @@ Examples:
         cli_quiet = args.quiet
         
         # Override args with YAML values
-        args.dm = params.get('dm', args.dm)
+        args.dm_v = params.get('dm_v', args.dm_v)
+        args.dm_r = params.get('dm_r', args.dm_r)
         args.sensor = params.get('sensor', args.sensor)
         args.router = params.get('router', args.router)
         args.x_low = params.get('x_low', args.x_low)
@@ -353,14 +374,14 @@ Examples:
         args.quiet = params.get('quiet', cli_quiet)
     
     # Validate inputs
-    if args.dm < 0 or args.sensor < 0 or args.router < 0:
+    if args.dm_v < 0 or args.dm_r < 0 or args.sensor < 0 or args.router < 0:
         parser.error("Node counts must be non-negative")
     
     if args.x_low >= args.x_high or args.y_low >= args.y_high:
         parser.error("Invalid coordinate bounds: low must be less than high")
     
     # Generate topology
-    print(f"\nGenerating topology with {args.dm} DM, {args.sensor} Sensor, {args.router} Router nodes...")
+    print(f"\nGenerating topology with {args.dm_v} DM Victim, {args.dm_r} DM Rescue, {args.sensor} Sensor, {args.router} Router nodes...")
     print(f"Coordinate bounds: X[{args.x_low}, {args.x_high}], Y[{args.y_low}, {args.y_high}]")
     if args.max_distance is not None:
         print(f"Maximum distance from center: {args.max_distance}m")
@@ -368,7 +389,8 @@ Examples:
         print(f"Random seed: {args.seed}")
     
     nodes = generate_random_topology(
-        num_dm=args.dm,
+        num_dm_v=args.dm_v,
+        num_dm_r=args.dm_r,
         num_sensor=args.sensor,
         num_router=args.router,
         x_low=args.x_low,

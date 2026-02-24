@@ -2,9 +2,10 @@
 # Use this file with: python generate_topology.py --input-params topology_params.yaml
 
 # Node counts
-dm: 11          # Number of Direct Message nodes
-sensor: 11      # Number of Sensor nodes
-router: 2       # Number of Router nodes
+dm_v: 15        # Number of Direct Message Victim nodes
+dm_r: 7        # Number of Direct Message Rescue nodes 
+sensor: 0      # Number of Sensor nodes
+router: 2      # Number of Router nodes
 
 # Coordinate bounds (meters)
 x_low: -3500

@@ -6,15 +6,43 @@ import random
 
 # Configure matplotlib backend for headless environments (Colab, servers)
 import matplotlib
-backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
-if backend == 'TkAgg':
+
+# Detect if we're in a headless environment (EC2, Colab, etc.)
+def is_headless():
+    """Check if running in headless environment (no DISPLAY)"""
+    # Check for EC2 instance
+    if os.path.exists('/sys/hypervisor/uuid'):
+        try:
+            with open('/sys/hypervisor/uuid', 'r') as f:
+                if 'ec2' in f.read().lower():
+                    return True
+        except:
+            pass
+    # Check for DISPLAY environment variable (Linux/Unix)
+    if os.name != 'nt' and not os.environ.get('DISPLAY'):
+        return True
+    # Check for SSH connection
+    if os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_CLIENT'):
+        return True
+    return False
+
+# Set backend based on environment
+backend = os.environ.get('MPLBACKEND', None)
+if backend:
+    # User explicitly set backend
+    matplotlib.use(backend)
+elif is_headless():
+    # Headless environment (EC2, server, etc.)
+    matplotlib.use('Agg')
+    print('Using non-interactive backend (headless environment detected)')
+else:
+    # Interactive environment (desktop)
     try:
         matplotlib.use("TkAgg")
+        print('Using interactive backend (TkAgg)')
     except ImportError:
         print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
         matplotlib.use('Agg')
-else:
-    matplotlib.use(backend)
 
 from matplotlib import pyplot as plt
 import yaml
@@ -235,6 +263,12 @@ if conf.MOVEMENT_ENABLED:
 
 graph.save()
 
+# Show the topology graph window (only works with interactive backend)
+try:
+	plt.show(block=False)  # Non-blocking so script continues
+except:
+	pass  # Silently fail in headless environments
+
 for node in nodes:
     print(node)
 
@@ -351,7 +385,7 @@ for n in nodes:
             RecivedSensorPackets[origId][n.nodeid] = len(packet.keys())
             SensorPacketsExtra[origId][n.nodeid] = sum([count - 1 for count in packet.values() if count > 1])  # count extra packets received
 
-    if n.simRole == "DM" or n.simRole == "Control_Center":
+    if n.simRole == "DM_Victim" or n.simRole == "DM_Rescue" or n.simRole == "Control_Center":
         if n.nodeid not in CreatedDMPackets:
             CreatedDMPackets[n.nodeid] = {}
         for destId, count in n.numberOfDMPacketsCreated.items():
@@ -918,3 +952,8 @@ plt.savefig(f"output/plots/battery_all_nodes_{conf.SELECTED_ROUTER_TYPE.name}.pn
 plt.close()
 
 print("\nSimulation complete.")
+
+# Keep graph windows open in interactive mode
+if matplotlib.get_backend() != 'Agg':
+	print("Displaying topology graph. Close the window to exit.")
+	plt.show()  # Blocking call to keep windows open

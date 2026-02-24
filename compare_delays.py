@@ -461,11 +461,11 @@ def main():
         sys.exit(1)
     
     # Compare each packet type
-    if sensor_data:
-        print(f"\nFound sensor delay data for routing types:")
-        for routing in sensor_data.keys():
-            print(f"  - {routing}")
-        compare_delays_overview(sensor_data, "sensor", args.output_dir, len(run_dirs))
+    # if sensor_data:
+    #     print(f"\nFound sensor delay data for routing types:")
+    #     for routing in sensor_data.keys():
+    #         print(f"  - {routing}")
+    #     compare_delays_overview(sensor_data, "sensor", args.output_dir, len(run_dirs))
     
     if dm_data:
         print(f"\nFound DM delay data for routing types:")

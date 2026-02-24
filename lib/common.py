@@ -9,16 +9,7 @@ from matplotlib.widgets import Button, Slider, RadioButtons, TextBox
 
 from lib import phy
 
-# Use non-interactive backend for headless environments (Colab, servers)
-backend = os.environ.get('MPLBACKEND', 'Agg')  # Default to Agg for compatibility
-if backend == 'TkAgg':
-	try:
-		matplotlib.use("TkAgg")
-	except ImportError:
-		print('Warning: TkAgg not available. Using Agg backend (non-interactive).')
-		matplotlib.use('Agg')
-else:
-	matplotlib.use(backend)
+# Backend is already configured in loraMesh.py before this module is imported
 
 
 def gen_scenario(conf):

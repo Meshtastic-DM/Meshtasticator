@@ -518,7 +518,7 @@ Examples:
     parser.add_argument('--params', '-p', type=str, default='topology_params.yaml',
                        help='Topology parameters YAML file (default: topology_params.yaml)')
     parser.add_argument('--routing', '-r', nargs='+',
-                       default=['AODV', 'MANAGED_FLOOD','BL_A_AODV'], #removed ZRP for testing
+                       default=['AODV', 'MANAGED_FLOOD'], #removed ZRP for testing
                        help='Routing protocols to test (default: AODV ZRP MANAGED_FLOOD BL_A_AODV)')
     parser.add_argument('--output', '-o', type=str,
                        default=None,

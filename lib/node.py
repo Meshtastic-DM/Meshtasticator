@@ -65,6 +65,8 @@ class MeshNode:
         self.lastBroadcastY = self.y
         self.lastBroadcastTime = 0
 
+        self.DMdestinations = set([])
+
         self.numberOfSensorPacketsCreated = {}
         self.SensorPacketsReceived = {}
         self.SensorPacketsReceivedOrigId={}
@@ -249,6 +251,9 @@ class MeshNode:
 
     def generate_message(self):
         while True:
+            for node in self.nodes:
+                if node.nodeid != self.nodeid and node.simRole == "Control_Center":
+                    self.DMdestinations.add(node.nodeid)
             if not self.alive:
                 return
             if self.simRole == "Sensor":
@@ -261,23 +266,38 @@ class MeshNode:
                     self.numberOfSensorPacketsCreated[destId] = 0
                 self.numberOfSensorPacketsCreated[destId] += 1
             elif self.simRole == "Control_Center":
-                nextGen = self.get_next_time(5*60*1000)
+                nextGen = self.get_next_time(7.5*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
                 destId = NODENUM_BROADCAST
                 self.numberOfBroadcastPacketsCreated += 1
-            elif self.simRole == "DM":
+            elif self.simRole == "DM_Victim":
                 nextGen = self.get_next_time(1*60*1000)
                 if nextGen < 0:  # do not generate message near the end of the simulation
                     break
                 yield self.env.timeout(nextGen)
-                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if ((self.nodes[i].simRole == "DM" or self.nodes[i].simRole == "Control_Center" or self.nodes[i].simRole == "sdn_node")) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
+                destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if (self.nodes[i].nodeid in self.DMdestinations) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
                 if not destId in self.numberOfDMPacketsCreated.keys():
                     self.numberOfDMPacketsCreated[destId] = 0
                 self.numberOfDMPacketsCreated[destId] += 1
-            elif self.simRole == "sdn_node":
+            if self.simRole == "DM_Rescue":
+                nextGen = self.get_next_time(1*60*1000)
+                randInt = self.nodeRng.randint(0, 25)
+                if nextGen < 0:  # do not generate message near the end of the simulation
+                    break
+                yield self.env.timeout(nextGen)
+                if randInt < 24:  # 90% chance to send DM to random victim, 10% chance to send broadcast DM
+                    destId = self.nodeRng.choice([i for i in range(0, len(self.nodes)) if (self.nodes[i].nodeid in self.DMdestinations) and (self.nodes[i].nodeid != self.nodeid)])  # send to a random DM or Control Center
+                    if not destId in self.numberOfDMPacketsCreated.keys():
+                        self.numberOfDMPacketsCreated[destId] = 0
+                    self.numberOfDMPacketsCreated[destId] += 1
+                else:
+                    destId = NODENUM_BROADCAST
+                
+            elif self.simRole == "sdn_node" or self.simRole == "DM_Rescue":
                 return
+            self.verboseprint(f"At time {round(self.env.now, 3)} node {self.nodeid} is generated a message for destination {destId}")
             p = self.send_packet(destId)
             while p.wantAck:  # ReliableRouter: retransmit message if no ACK received after timeout
                 retransmissionMsec = get_retransmission_msec(self, p)
@@ -297,6 +317,7 @@ class MeshNode:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
                         if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.BL_A_AODV:
                             ############ AODV version ############
+                            break
                             pNew = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, False, None, self.env.now, self.verboseprint, rreq_id=None)
                             pNew.retransmissions = minRetransmissions - 1
                             self.verboseprint(round(self.env.now, 3), 'Node', self.nodeid, 'wants to retransmit its generated packet to', destId, 'with seq.nr.', p.seq, 'minRetransmissions', minRetransmissions)
@@ -518,7 +539,7 @@ class MeshNode:
                                 self.BroadcastPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
                             self.BroadcastPacketsReceived[p.seq] += 1
                         
-                        elif orginTxNode.simRole == "DM":
+                        elif ((orginTxNode.simRole == "DM_Victim") or (orginTxNode.simRole == "DM_Rescue")) and (p.destId == self.nodeid):
                             if not p.seq in self.DMPacketsReceived.keys():
                                 self.DMPacketsReceived[p.seq] = 0
                                 if not p.origTxNodeId in self.DMPacketsReceivedOrigId.keys():
@@ -529,13 +550,17 @@ class MeshNode:
                                 self.DMPacketsDelays[p.origTxNodeId].append(self.env.now - p.genTime)
                             self.DMPacketsReceived[p.seq] += 1
                             self.DMPacketsReceivedOrigId[p.origTxNodeId][p.seq] += 1
+                            if orginTxNode.simRole == "DM_Victim" and self.simRole == "DM_Rescue":
+                                self.DMdestinations.add(p.origTxNodeId)
+                        elif orginTxNode.simRole == "DM_Rescue" and p.destId == NODENUM_BROADCAST:
+                            self.DMdestinations.add(p.origTxNodeId)
                     else:
                         if self.simRole == "Sensor":
                             if not p.seq in self.SensorPacketsAcked.keys():
                                 self.SensorPacketsAcked[p.seq] = 0
                                 self.ACKPacketsDelays.append(self.env.now - p.genTime)
                             self.SensorPacketsAcked[p.seq] += 1
-                        elif self.simRole == "DM":
+                        elif self.simRole == "DM_Victim" or self.simRole == "DM_Rescue":
                             if not p.seq in self.DMPacketsAcked.keys():
                                 self.DMPacketsAcked[p.seq] = 0
                                 self.ACKPacketsDelays.append(self.env.now - p.genTime)
