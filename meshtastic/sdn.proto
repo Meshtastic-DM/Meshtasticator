@@ -153,6 +153,55 @@ message SDNRouteSetConfirm {
 }
 
 /**
+ * Per-relay link quality metrics
+ * Sent periodically by nodes with active routing (2+ relay nodes)
+ */
+message SDNLinkQuality {
+    /**
+     * Relay node being measured (8-bit last byte)
+     */
+    uint32 relay_node = 1;
+    
+    /**
+     * Packets successfully received from this relay (good CRC)
+     */
+    uint32 rx_good = 2;
+    
+    /**
+     * Packets with errors from this relay (bad CRC)
+     */
+    uint32 rx_bad = 3;
+    
+    /**
+     * Packet Delivery Ratio = rx_good / (rx_good + rx_bad)
+     */
+    float pdr = 4;
+    
+    /**
+     * Global transmission statistics (not per-neighbor)
+     * Total packets successfully transmitted by this node
+     */
+    uint32 tx_good_global = 5;
+    
+    /**
+     * Global packet drops (not per-neighbor)
+     * Total packets dropped before transmission
+     */
+    uint32 tx_drop_global = 6;
+    
+    /**
+     * Global Link Reliability = tx_good / (tx_good + tx_drop)
+     * Note: This is node-wide, not specific to relay_node
+     */
+    float link_reliability_global = 7;
+    
+    /**
+     * Timestamp when metrics collected
+     */
+    fixed32 timestamp = 8;
+}
+
+/**
  * SDN message wrapper
  */
 message SDN {
@@ -166,5 +215,6 @@ message SDN {
         SDNRouteInstall route_install = 4;
         SDNRouteSet route_set = 5;
         SDNRouteSetConfirm route_set_confirm = 6;
+        SDNLinkQuality link_quality = 7;
     }
 }
