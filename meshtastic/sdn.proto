@@ -60,14 +60,10 @@ message SDNRouteUpdate {
     uint32 dest_seq_num = 4;
 
     /**
-     * Node reporting this route (this node's ID)
-     */
-    fixed32 reporter_node = 5;
-
-    /**
      * Unix timestamp when route was learned
+     * Reporter node is available in MeshPacket.from field
      */
-    fixed32 timestamp = 6;
+    fixed32 timestamp = 5;
 }
 
 /**
