@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package meshtastic;
 
+import "nanopb.proto";
+
 option java_outer_classname = "SDNProtos";
 option optimize_for = LITE_RUNTIME;
 option go_package = "github.com/meshtastic/go/generated";
@@ -60,14 +62,10 @@ message SDNRouteUpdate {
     uint32 dest_seq_num = 4;
 
     /**
-     * Node reporting this route (this node's ID)
-     */
-    fixed32 reporter_node = 5;
-
-    /**
      * Unix timestamp when route was learned
+     * Reporter node is available in MeshPacket.from field
      */
-    fixed32 timestamp = 6;
+    fixed32 timestamp = 5;
 }
 
 /**
@@ -128,11 +126,6 @@ message SDNRouteSet {
      * Installation ID for tracking (0-255)
      */
     uint32 install_id = 3;
-
-    /**
-     * Start node's AODV sequence number for reverse route installation
-     */
-    uint32 dest_seq_num = 4;
 }
 
 /**
@@ -162,6 +155,43 @@ message SDNRouteSetConfirm {
 }
 
 /**
+ * Per-relay link quality metrics
+ * Sent periodically by nodes with active routing (2+ relay nodes)
+ */
+message SDNLinkQuality {
+    /**
+     * Array of relay nodes being measured (8-bit last byte)
+     * Top 3 relays ordered by total packet count (descending)
+     * All arrays must have same length (max 3 elements)
+     */
+    repeated uint32 relay_node = 1 [(nanopb).max_count = 3];
+    
+    /**
+     * Packets successfully received from each relay (good CRC)
+     * Array index corresponds to relay_node array
+     */
+    repeated uint32 rx_good = 2 [(nanopb).max_count = 3];
+    
+    /**
+     * Packets with errors from each relay (bad CRC)
+     * Array index corresponds to relay_node array
+     */
+    repeated uint32 rx_bad = 3 [(nanopb).max_count = 3];
+    
+    /**
+     * Channel utilization percentage (total: TX + RX + noise)
+     * Node-wide metric (not per-relay)
+     */
+    float channel_utilization = 4;
+    
+    /**
+     * Air utilization TX percentage within last hour
+     * Node-wide metric (not per-relay)
+     */
+    float air_util_tx = 5;
+}
+
+/**
  * SDN message wrapper
  */
 message SDN {
@@ -175,5 +205,6 @@ message SDN {
         SDNRouteInstall route_install = 4;
         SDNRouteSet route_set = 5;
         SDNRouteSetConfirm route_set_confirm = 6;
+        SDNLinkQuality link_quality = 7;
     }
 }
