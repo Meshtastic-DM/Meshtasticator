@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package meshtastic;
 
+import "nanopb.proto";
+
 option java_outer_classname = "SDNProtos";
 option optimize_for = LITE_RUNTIME;
 option go_package = "github.com/meshtastic/go/generated";
@@ -158,47 +160,35 @@ message SDNRouteSetConfirm {
  */
 message SDNLinkQuality {
     /**
-     * Relay node being measured (8-bit last byte)
+     * Array of relay nodes being measured (8-bit last byte)
+     * Top 3 relays ordered by total packet count (descending)
+     * All arrays must have same length (max 3 elements)
      */
-    uint32 relay_node = 1;
+    repeated uint32 relay_node = 1 [(nanopb).max_count = 3];
     
     /**
-     * Packets successfully received from this relay (good CRC)
+     * Packets successfully received from each relay (good CRC)
+     * Array index corresponds to relay_node array
      */
-    uint32 rx_good = 2;
+    repeated uint32 rx_good = 2 [(nanopb).max_count = 3];
     
     /**
-     * Packets with errors from this relay (bad CRC)
+     * Packets with errors from each relay (bad CRC)
+     * Array index corresponds to relay_node array
      */
-    uint32 rx_bad = 3;
+    repeated uint32 rx_bad = 3 [(nanopb).max_count = 3];
     
     /**
-     * Packet Delivery Ratio = rx_good / (rx_good + rx_bad)
+     * Channel utilization percentage (total: TX + RX + noise)
+     * Node-wide metric (not per-relay)
      */
-    float pdr = 4;
+    float channel_utilization = 4;
     
     /**
-     * Global transmission statistics (not per-neighbor)
-     * Total packets successfully transmitted by this node
+     * Air utilization TX percentage within last hour
+     * Node-wide metric (not per-relay)
      */
-    uint32 tx_good_global = 5;
-    
-    /**
-     * Global packet drops (not per-neighbor)
-     * Total packets dropped before transmission
-     */
-    uint32 tx_drop_global = 6;
-    
-    /**
-     * Global Link Reliability = tx_good / (tx_good + tx_drop)
-     * Note: This is node-wide, not specific to relay_node
-     */
-    float link_reliability_global = 7;
-    
-    /**
-     * Timestamp when metrics collected
-     */
-    fixed32 timestamp = 8;
+    float air_util_tx = 5;
 }
 
 /**
