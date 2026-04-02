@@ -17,13 +17,25 @@ parser.add_argument('-f', '--forward', action='store_true')
 parser.add_argument('-p', '--program', type=str, default=os.getcwd())
 parser.add_argument('-c', '--collisions', action='store_true')
 parser.add_argument('nrNodes', type=int, nargs='?', choices=range(0, 11), default=0)
+parser.add_argument('--serial', type=str, default=None,
+                    help='Serial port for physical Meshtastic node (e.g. /dev/ttyUSB0)')
+parser.add_argument('--mirror-node', type=int, default=0,
+                    help='Virtual node id to mirror with the physical node')
+parser.add_argument('--region', type=str, default='IN',
+                    help='LoRa region (example: IN, US, EU868)')
+parser.add_argument('--modem-preset', type=str, default='SHORT_TURBO',
+                    help='LoRa modem preset (example: SHORT_TURBO)')
 
-sim = InteractiveSim(parser.parse_args())  # Start the simulator
+args = parser.parse_args()
+if args.serial is not None and args.nrNodes > 0 and not (0 <= args.mirror_node < args.nrNodes):
+    parser.error("--mirror-node must be within [0, nrNodes-1]")
+
+sim = InteractiveSim(args)  # Start the simulator
 
 if sim.script:  # Use '-s' as argument if you want to specify what you want to send here
     try:
         time.sleep(45)  # Wait until nodeInfo messages are sent
-        sim.show_nodes()  # Show nodeDB as seen by each node
+        sim.showNodes()  # fixed method name
 
         fromNode = 0  # Node from which a message will be sent
         toNode = 1  # Node to whom a message will be sent (if not a broadcast)

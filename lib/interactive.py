@@ -11,7 +11,7 @@ import subprocess
 
 import google.protobuf.json_format as proto
 from matplotlib import patches
-from meshtastic import tcp_interface, BROADCAST_NUM, mesh_pb2, admin_pb2, telemetry_pb2, portnums_pb2, channel_pb2
+from meshtastic import tcp_interface, serial_interface, BROADCAST_NUM, mesh_pb2, admin_pb2, telemetry_pb2, portnums_pb2, channel_pb2
 from pubsub import pub
 import numpy as np
 import matplotlib.pyplot as plt
@@ -62,6 +62,8 @@ class InteractiveNode:
         self.numRxDupe = 0
         self.numTxRelay = 0
         self.numTxRelayCanceled = 0
+        self.desiredRegion = "IN"
+        self.desiredModemPreset = "SHORT_TURBO"
 
     def add_interface(self, iface):
         self.iface = iface
@@ -76,14 +78,27 @@ class InteractiveNode:
         
         # Set LoRa region (REQUIRED for PKI key generation!)
         loraConfig = self.iface.localNode.localConfig.lora
-        # Map config region to Meshtastic region enum codes
-        region_map = {"US": 1, "EU433": 2, "EU868": 3}
-        region_name = next((k for k, v in conf.regions.items() if v == conf.REGION), "US")
-        region_code = region_map.get(region_name, 1)  # Default to US = 1
-        
-        setattr(loraConfig, 'region', region_code)
+
+        # Resolve enum values by name from protobuf descriptor (no hardcoded numeric map)
+        region_name = (self.desiredRegion or "IN").upper()
+        modem_name = (self.desiredModemPreset or "SHORT_TURBO").upper()
+
+        region_enum = loraConfig.DESCRIPTOR.fields_by_name["region"].enum_type
+        modem_enum = loraConfig.DESCRIPTOR.fields_by_name["modem_preset"].enum_type
+
+        if region_name in region_enum.values_by_name:
+            setattr(loraConfig, "region", region_enum.values_by_name[region_name].number)
+        else:
+            print(f"[warn] Unknown region '{region_name}', keeping current region")
+
+        if modem_name in modem_enum.values_by_name:
+            setattr(loraConfig, "modem_preset", modem_enum.values_by_name[modem_name].number)
+        else:
+            print(f"[warn] Unknown modem preset '{modem_name}', keeping current preset")
+
         if self.hopLimit != 3:
             setattr(loraConfig, 'hop_limit', self.hopLimit)
+
         p = admin_pb2.AdminMessage()
         p.set_config.lora.CopyFrom(loraConfig)
         self.iface.localNode._sendAdmin(p)
@@ -356,12 +371,25 @@ class InteractiveSim:
         self.forwardToClient = args.forward
         self.emulateCollisions = args.collisions
         self.removeConfig = not args.from_file
+
+        # NEW: bridge + radio profile settings
+        self.serialPort = args.serial
+        self.mirrorNode = int(args.mirror_node)
+        self.region = (args.region or "IN").upper()
+        self.modemPreset = (args.modem_preset or "SHORT_TURBO").upper()
+        self.serial_iface = None
+
+        # NEW: loop suppression
+        self._seen_from_serial = {}
+        self._seen_to_serial = {}
+        self._seen_ttl_s = 30.0
+
         if args.from_file:
             foundNodes = True
             with open(os.path.join("out", "nodeConfig.yaml"), 'r') as file:
                 config = yaml.load(file, Loader=yaml.FullLoader)
             conf.NR_NODES = len(config.keys())
-        elif args.nrNodes > 0:  # nrNodes was specified
+        elif args.nrNodes > 0:
             conf.NR_NODES = args.nrNodes
             foundNodes = True
             config = [None for _ in range(conf.NR_NODES)]
@@ -377,8 +405,13 @@ class InteractiveSim:
         self.graph = InteractiveGraph()
         for n in range(conf.NR_NODES):
             node = InteractiveNode(self.nodes, n, self.node_id_to_hw_id(n), n + TCP_PORT_OFFSET, config[n])
+            node.desiredRegion = self.region
+            node.desiredModemPreset = self.modemPreset
             self.nodes.append(node)
             self.graph.add_node(node)
+
+        if self.serialPort is not None and not (0 <= self.mirrorNode < len(self.nodes)):
+            raise ValueError(f"--mirror-node must be in [0, {len(self.nodes)-1}]")
 
         print("Booting nodes...")
 
@@ -386,14 +419,53 @@ class InteractiveSim:
         iface0 = self.init_forward()
         self.init_communication(iface0)
 
+    # NEW
+    def _gc_seen(self):
+        now = time.time()
+        for table in (self._seen_from_serial, self._seen_to_serial):
+            stale = [k for k, ts in table.items() if now - ts > self._seen_ttl_s]
+            for k in stale:
+                del table[k]
+
+    # NEW
+    def _seen_recent(self, table, pkt_id):
+        if pkt_id is None:
+            return False
+        ts = table.get(pkt_id)
+        return ts is not None and (time.time() - ts) <= self._seen_ttl_s
+
+    # NEW
+    def _mark_seen(self, table, pkt_id):
+        if pkt_id is not None:
+            table[pkt_id] = time.time()
+
+    # NEW
+    def init_serial_bridge(self):
+        if not self.serialPort:
+            return
+        try:
+            self.serial_iface = serial_interface.SerialInterface(devPath=self.serialPort)
+            self.nodes[self.mirrorNode].add_interface(self.serial_iface)
+            print(f"[serial] connected on {self.serialPort}; mirror node={self.mirrorNode}")
+            pub.subscribe(self.on_receive_serial, "meshtastic.receive")
+        except Exception as ex:
+            self.serial_iface = None
+            print(f"[serial] failed to open {self.serialPort}: {ex}")
+
     def init_nodes(self, args):
+        run_nodes = [n for n in self.nodes if not (self.serialPort and n.nodeid == self.mirrorNode)]
+        if len(run_nodes) == 0:
+            print("[init_nodes] no virtual/native nodes to spawn (serial-only mirror mode).")
+            return
+
         if self.docker:
             try:
                 import docker
             except ImportError:
                 print("Please install the Docker SDK for Python with 'pip3 install docker'.")
                 exit(1)
-            n0 = self.nodes[0]
+
+            n0 = run_nodes[0]
             dockerClient = docker.from_env()
             startNode = f"{MESHTASTICD_PATH_DOCKER} "
             if self.removeConfig:
@@ -403,60 +475,45 @@ class InteractiveSim:
                 self.container = dockerClient.containers.run(
                     DEVICE_SIM_DOCKER_IMAGE,
                     f"{startNode} -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort}",
-                    ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
+                    ports=dict(zip((f'{n.TCPPort}/tcp' for n in run_nodes), (n.TCPPort for n in run_nodes))),
                     name="Meshtastic", detach=True, auto_remove=True, user="root"
                 )
-                for n in self.nodes[1:]:
+                for n in run_nodes[1:]:
                     if self.emulateCollisions:
-                        time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
-                    self.container.exec_run(f"{startNode} -d /home/node{n0.nodeid} -h {n.hwId} -p {n.TCPPort}", detach=True, user="root")
-                print(f"Docker container with name {self.container.name} is started.")
+                        time.sleep(2)
+                    self.container.exec_run(f"{startNode} -d /home/node{n.nodeid} -h {n.hwId} -p {n.TCPPort}", detach=True, user="root")
             else:
                 self.container = dockerClient.containers.run(
                     DEVICE_SIM_DOCKER_IMAGE,
                     f"sh -c '{startNode} -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort} > /home/out_{n0.nodeid}.log'",
-                    ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
+                    ports=dict(zip((f'{n.TCPPort}/tcp' for n in run_nodes), (n.TCPPort for n in run_nodes))),
                     name="Meshtastic", detach=True, auto_remove=True, user="root",
                     volumes={"Meshtasticator": {'bind': '/home/', 'mode': 'rw'}}
                 )
-                for n in self.nodes[1:]:
+                for n in run_nodes[1:]:
                     if self.emulateCollisions:
-                        time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
+                        time.sleep(2)
                     self.container.exec_run(f"sh -c '{startNode} -d /home/node{n.nodeid} -h {n.hwId} -p {n.TCPPort} > /home/out_{n.nodeid}.log'", detach=True, user="root")
-                print(f"Docker container with name {self.container.name} is started.")
-                print(f"You can check the device logs using 'docker exec -it {self.container.name} cat /home/out_x.log', where x is the node number.")
         else:
-            # run nodes natively (WSL + gnome-terminal / xterm)
             os.makedirs("out", exist_ok=True)
-
             prog = os.path.join(args.program, 'program')
-
-            for n in self.nodes:
+            for n in run_nodes:
                 node_args = (
                     f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid} "
                     f"-h {n.hwId} "
                     f"-p {n.TCPPort} "
                     + ("-e " if self.removeConfig else "")
                 )
-
-                # Force line buffering so logs appear live AND get written
                 cmd = f"stdbuf -oL -eL {prog} {node_args} 2>&1 | tee out/node{n.nodeid}.log"
-
                 if which('gnome-terminal') is not None:
-                    os.system(
-                        f"gnome-terminal --title='Node {n.nodeid}' -- bash -lc \"{cmd}\""
-                    )
+                    os.system(f"gnome-terminal --title='Node {n.nodeid}' -- bash -lc \"{cmd}\"")
                 elif which('xterm') is not None:
-                    os.system(
-                        f"xterm -title 'Node {n.nodeid}' -e bash -lc \"{cmd}\""
-                    )
+                    os.system(f"xterm -title 'Node {n.nodeid}' -e bash -lc \"{cmd}\"")
                 else:
-                    print(
-                        'Native mode requires gnome-terminal or xterm (WSLg/X11).'
-                    )
+                    print('Native mode requires gnome-terminal or xterm (WSLg/X11).')
                     exit(1)
-                if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
-                    time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
+                if self.emulateCollisions and n.nodeid != run_nodes[-1].nodeid:
+                    time.sleep(2)
 
     def init_forward(self):
         if self.forwardToClient:
@@ -480,185 +537,148 @@ class InteractiveSim:
     def init_communication(self, iface0):
         try:
             print("[init_com] starting…")
-            
-            # 1. Create TCP interfaces for all nodes
+
+            # NEW: serial mirror first (if enabled)
+            self.init_serial_bridge()
+
+            # TCP interfaces for non-mirror nodes
             for n in self.nodes[int(self.forwardToClient):]:
+                if self.serialPort and n.nodeid == self.mirrorNode:
+                    continue
                 print(f"[init_com] setting up TCPInterface for node {n.nodeid} on port {n.TCPPort}")
                 iface = tcp_interface.TCPInterface(hostname="localhost", portNumber=n.TCPPort)
                 n.add_interface(iface)
-            print("[init_com] all node TCPInterfaces added")
+            print("[init_com] all node interfaces added")
 
-            # 2. Forward-to-client special handling
             if self.forwardToClient:
-                print("[init_com] forwardToClient is enabled, connecting iface0…")
                 self.clientConnected = True
                 iface0.localNode.nodeNum = self.nodes[0].hwId
-                print("[init_com] calling iface0.connect() …")
-                iface0.connect()  # real connection now
-                print("[init_com] iface0.connect() done")
+                iface0.connect()
 
-            # 3. Configure nodes
             print("[init_com] setting configs for nodes…")
             for n in self.nodes:
-                print(f"[init_com] calling set_config() on node {n.nodeid}")
+                if n.iface is None:
+                    continue
                 requiresReboot = n.set_config()
                 if requiresReboot and self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
-                    print(f"[init_com] node {n.nodeid} requires reboot, sleeping to avoid collisions")
                     time.sleep(2)
-            print("[init_com] finished set_config for all nodes")
 
-            # 4. Reconnect logic
             print("[init_com] calling reconnect_nodes() …")
             self.reconnect_nodes()
-            print("[init_com] reconnect_nodes() finished")
 
-            # 5. Subscribe to pubsub events
-            print("[init_com] subscribing to pubsub events…")
             pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
             pub.subscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
             if self.forwardToClient:
                 pub.subscribe(self.on_receive_all, "meshtastic.receive")
-            print("[init_com] pubsub subscriptions complete")
 
         except Exception as ex:
             print(f"[init_com] Error: Could not connect to native program: {ex}")
             self.close_nodes()
             sys.exit(1)
 
- 
-
-    def _safe_close_iface(self, n, timeout=2.5):
-        """
-        Attempt to close n.iface without hanging. Returns True if close finished within timeout.
-        Works even if the iface has a blocking recv() by trying to stop the reader and shutdown the socket first.
-        """
-        iface = getattr(n, "iface", None)
-        if not iface:
-            return True
-
-        # 1) Try to signal any reader loop to stop, if available
-        try:
-            if hasattr(iface, "stop"):
-                iface.stop()
-            if hasattr(iface, "_stop_event"):
-                iface._stop_event.set()
-        except Exception:
-            pass
-
-        # 2) Try to shutdown the underlying socket to break out of recv()
-        try:
-            sock = getattr(iface, "sock", None) or getattr(iface, "_sock", None)
-            if sock:
-                try:
-                    sock.shutdown(socket.SHUT_RDWR)
-                except Exception:
-                    pass  # already closed / not a raw socket
-        except Exception:
-            pass
-
-        # 3) Call close() in a background thread with a timeout
-        done = threading.Event()
-
-        def _do_close():
-            try:
-                iface.close()
-            except Exception:
-                pass
-            finally:
-                done.set()
-
-        t = threading.Thread(target=_do_close, daemon=True)
-        t.start()
-        ok = done.wait(timeout)
-
-        return ok
-
-
-
-
+    # compatibility wrapper
     def reconnect_nodes(self):
+        """Reconnect TCP-backed simulated nodes after config/reboot."""
         print("[reconnect] starting...")
         time.sleep(3)
 
-        # (optional) unsubscribe before teardown to avoid re-entrant callbacks
-        try:
-            pub.unsubscribe(self.on_receive, "meshtastic.receive.simulator")
-            pub.unsubscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
-            if self.forwardToClient:
-                pub.unsubscribe(self.on_receive_all, "meshtastic.receive")
-        except Exception:
-            pass
-
-        print("[reconnect] closing existing interfaces...")
+        # close only TCP virtual nodes (skip serial mirror)
         for n in self.nodes[int(self.forwardToClient):]:
+            if self.serialPort and n.nodeid == self.mirrorNode:
+                continue
             try:
-                print(f"[reconnect] closing iface for node {n.nodeid} (port {n.TCPPort})")
-                ok = self._safe_close_iface(n)
-                # mark iface None so subsequent logic won’t touch a half-closed object
-                n.iface = None
-                if ok:
-                    print(f"[reconnect] iface closed for node {n.nodeid}")
-                else:
-                    print(f"[reconnect] timeout: close() hung for node {n.nodeid}; skipping")
-            except Exception as e:
-                print(f"[reconnect] Unexpected error while closing node {n.nodeid}: {e}")
+                if n.iface is not None:
+                    n.iface.close()
+            except Exception:
+                pass
+            n.iface = None
 
-        print("[reconnect] sleeping 5s before reconnect attempts...")
-        time.sleep(5)
+        time.sleep(2)
 
-        print("[reconnect] attempting to reconnect nodes...")
-        for n in self.nodes:
-            print(f"[reconnect] starting reconnect loop for node {n.nodeid} (port {n.TCPPort})")
-            while not n.iface:
+        # reopen TCP interfaces
+        for n in self.nodes[int(self.forwardToClient):]:
+            if self.serialPort and n.nodeid == self.mirrorNode:
+                continue
+
+            while n.iface is None:
                 try:
-                    print(f"[reconnect] trying TCPInterface for node {n.nodeid} on port {n.TCPPort}")
                     iface = tcp_interface.TCPInterface(hostname="localhost", portNumber=n.TCPPort)
                     n.add_interface(iface)
-                    print(f"[reconnect] SUCCESS node {n.nodeid} now has iface")
-                except OSError as e:
-                    print(f"[reconnect] OSError: port {n.TCPPort} not ready yet for node {n.nodeid}: {e}")
-                    time.sleep(1)
-                except Exception as e:
-                    print(f"[reconnect] Unexpected error for node {n.nodeid}: {e}")
+                except Exception:
                     time.sleep(1)
 
-            if self.emulateCollisions and n.nodeid != len(self.nodes) - 1:
-                print(f"[reconnect] emulateCollisions ON, sleeping before next node (id {n.nodeid})")
+            if self.emulateCollisions and n.nodeid != self.nodes[-1].nodeid:
                 time.sleep(2)
 
-        # (optional) re-subscribe after reconnection
+        print("[reconnect] done.")
+
+    # optional backwards-compat alias
+    def reconnectNodes(self):
+        return self.reconnect_nodes()
+
+    # NEW
+    def _dict_to_meshpacket(self, packet):
+        mp = mesh_pb2.MeshPacket()
+        mp.to = packet["to"]
+        setattr(mp, "from", packet["from"])
+        mp.id = packet["id"]
+        mp.relay_node = packet.get("relayNode", mp.relay_node)
+        mp.next_hop = packet.get("nextHop", mp.next_hop)
+        mp.want_ack = packet.get("wantAck", mp.want_ack)
+        mp.hop_limit = packet.get("hopLimit", mp.hop_limit)
+        mp.hop_start = packet.get("hopStart", mp.hop_start)
+        mp.via_mqtt = packet.get("viaMQTT", mp.via_mqtt)
+        mp.channel = int(packet.get("channel", mp.channel))
+
+        decoded = packet.get("decoded")
+        if decoded:
+            payload = decoded.get("payload", b"")
+            if getattr(payload, "SerializeToString", None):
+                payload = payload.SerializeToString()
+            mp.decoded.payload = payload
+            portnum = decoded.get("portnum", mp.decoded.portnum)
+            if isinstance(portnum, str):
+                try:
+                    portnum = getattr(portnums_pb2.PortNum, portnum)
+                except Exception:
+                    pass
+            mp.decoded.portnum = portnum
+            mp.decoded.request_id = decoded.get("requestId", mp.decoded.request_id)
+            mp.decoded.want_response = decoded.get("wantResponse", mp.decoded.want_response)
+        else:
+            cipher = packet.get("encrypted", b"")
+            if getattr(cipher, "SerializeToString", None):
+                cipher = cipher.SerializeToString()
+            mp.encrypted = cipher
+            mp.pki_encrypted = True
+        return mp
+
+    # NEW
+    def _forward_to_serial(self, packet):
+        if self.serial_iface is None:
+            return
         try:
-            pub.subscribe(self.on_receive, "meshtastic.receive.simulator")
-            pub.subscribe(self.on_receive_metrics, "meshtastic.receive.telemetry")
-            if self.forwardToClient:
-                pub.subscribe(self.on_receive_all, "meshtastic.receive")
-        except Exception:
-            pass
+            tr = mesh_pb2.ToRadio()
+            tr.packet.CopyFrom(self._dict_to_meshpacket(packet))
+            self.serial_iface._sendToRadio(tr)
+        except Exception as ex:
+            print(f"[serial] forward failed: {ex}")
 
-        print("[reconnect] finished successfully")
+    # NEW: physical -> simulator
+    def on_receive_serial(self, interface, packet):
+        if self.serial_iface is None or interface is not self.serial_iface:
+            return
 
+        self._gc_seen()
+        pkt_id = packet.get("id")
+        if self._seen_recent(self._seen_to_serial, pkt_id):
+            return
+        self._mark_seen(self._seen_from_serial, pkt_id)
 
-
-
-
-    @staticmethod
-    def packet_from_packet(packet, data, portnum):
-        meshPacket = mesh_pb2.MeshPacket()
-        meshPacket.decoded.payload = data
-        meshPacket.decoded.portnum = portnum
-        meshPacket.to = packet["to"]
-        setattr(meshPacket, "from", packet["from"])
-        meshPacket.id = packet["id"]
-        meshPacket.relay_node = packet.get("relayNode", meshPacket.relay_node)
-        meshPacket.next_hop = packet.get("nextHop", meshPacket.next_hop)          
-        meshPacket.want_ack = packet.get("wantAck", meshPacket.want_ack)
-        meshPacket.hop_limit = packet.get("hopLimit", meshPacket.hop_limit)
-        meshPacket.hop_start = packet.get("hopStart", meshPacket.hop_start)
-        meshPacket.via_mqtt = packet.get("viaMQTT", meshPacket.via_mqtt)
-        meshPacket.decoded.request_id = packet["decoded"].get("requestId", meshPacket.decoded.request_id)
-        meshPacket.decoded.want_response = packet["decoded"].get("wantResponse", meshPacket.decoded.want_response)
-        meshPacket.channel = int(packet.get("channel", meshPacket.channel))
-        return meshPacket
+        tx = self.nodes[self.mirrorNode]
+        receivers = [n for n in self.nodes if n.nodeid != tx.nodeid]
+        rxs, rssis, snrs = self.calc_receivers(tx, receivers)
+        self.forward_packet(rxs, packet, rssis, snrs)
 
     def forward_packet(self, receivers, packet, rssis, snrs):
         meshPacket = mesh_pb2.MeshPacket()
@@ -821,12 +841,13 @@ class InteractiveSim:
         return self.get_node_iface_by_id(fromNode).getNode(self.node_id_to_dest(toNode))
 
     def on_receive(self, interface, packet):
-        if "requestId" in packet["decoded"]:
-            # Packet with requestId is coupled to original message
-            existingMsgId = next((m.localId for m in self.messages if m.packet["id"] == packet["decoded"]["requestId"]), None)
+        decoded = packet.get("decoded", {})
+
+        if "requestId" in decoded:
+            existingMsgId = next((m.localId for m in self.messages if m.packet["id"] == decoded["requestId"]), None)
+            mId = existingMsgId if existingMsgId is not None else self.messageId + 1
             if existingMsgId is None:
-                print('Could not find requestId!\n')
-            mId = existingMsgId
+                self.messageId += 1
         else:
             existingMsgId = next((m.localId for m in self.messages if m.packet["id"] == packet["id"]), None)
             if existingMsgId is not None:
@@ -834,15 +855,14 @@ class InteractiveSim:
             else:
                 self.messageId += 1
                 mId = self.messageId
+
         rP = InteractivePacket(packet, mId)
         self.messages.append(rP)
 
-        if self.script:
-            pnum = packet["decoded"].get("simulator", {}).get("portnum", "UNKNOWN")
-            print(f"Node {interface.myInfo.my_node_num-HW_ID_OFFSET} sent {pnum} with id {mId} over the air!")
+        transmitter = next((n for n in self.nodes if n.hwId == packet.get("from")), None)
+        if transmitter is None and hasattr(interface, "portNumber"):
+            transmitter = next((n for n in self.nodes if n.TCPPort == interface.portNumber), None)
 
-
-        transmitter = next((n for n in self.nodes if n.TCPPort == interface.portNumber), None)
         if transmitter is not None:
             receivers = [n for n in self.nodes if n.nodeid != transmitter.nodeid]
             rxs, rssis, snrs = self.calc_receivers(transmitter, receivers)
@@ -850,6 +870,14 @@ class InteractiveSim:
             rP.setRSSISNR(rssis, snrs)
             self.forward_packet(rxs, packet, rssis, snrs)
             self.graph.packets.append(rP)
+
+            # NEW: mirror node simulator -> physical
+            pkt_id = packet.get("id")
+            self._gc_seen()
+            if self.serial_iface is not None and transmitter.nodeid == self.mirrorNode:
+                if not self._seen_recent(self._seen_from_serial, pkt_id):
+                    self._mark_seen(self._seen_to_serial, pkt_id)
+                    self._forward_to_serial(packet)
 
     def on_receive_metrics(self, interface, packet):
         fromNode = next((n for n in self.nodes if n.hwId == packet["from"]), None)
@@ -927,14 +955,21 @@ class InteractiveSim:
         print("\nClosing all nodes...")
         pub.unsubAll()
 
-        # tell nodes to exit and close interfaces
         for n in self.nodes:
             try:
-                n.iface.localNode.exitSimulator()
+                if n.iface is not None:
+                    n.iface.localNode.exitSimulator()
             except Exception:
                 pass
             try:
-                n.iface.close()
+                if n.iface is not None:
+                    n.iface.close()
+            except Exception:
+                pass
+
+        if self.serial_iface is not None:
+            try:
+                self.serial_iface.close()
             except Exception:
                 pass
 
