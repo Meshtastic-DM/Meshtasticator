@@ -191,6 +191,15 @@ message SDNLinkQuality {
     float air_util_tx = 5;
 }
 
+enum SDNRoutingMode_Mode {
+    SDN_ROUTING_MODE_AODV = 0;
+    SDN_ROUTING_MODE_MANAGED_FLOODING = 1;
+}
+
+message SDNRoutingMode {
+    SDNRoutingMode_Mode mode = 1;
+}
+
 /**
  * SDN message wrapper
  */
@@ -206,5 +215,6 @@ message SDN {
         SDNRouteSet route_set = 5;
         SDNRouteSetConfirm route_set_confirm = 6;
         SDNLinkQuality link_quality = 7;
+        SDNRoutingMode routing_mode = 8;
     }
 }
