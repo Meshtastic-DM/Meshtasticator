@@ -31,6 +31,14 @@ MESHTASTICD_PATH_DOCKER = "./meshtasticd"
 
 
 class InteractiveNode:
+    @staticmethod
+    def parse_legacy_value(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ('true', 'yes', '1', 'on')
+        return bool(value)
+
     def __init__(self, nodes, nodeId, hwId, TCPPort, nodeConfig):
         self.nodeid = nodeId
         if nodeConfig is not None:
@@ -41,6 +49,7 @@ class InteractiveNode:
             self.hopLimit = nodeConfig['hopLimit']
             self.antennaGain = nodeConfig['antennaGain']
             self.neighborInfo = nodeConfig['neighborInfo']
+            self.legacy = self.parse_legacy_value(nodeConfig.get('legacy', False))
         else:
             self.x, self.y = find_random_position(conf, nodes)
             self.z = conf.HM
@@ -50,6 +59,7 @@ class InteractiveNode:
             self.hopLimit = conf.hopLimit
             self.antennaGain = conf.GL
             self.neighborInfo = False
+            self.legacy = False
         self.iface = None
         self.hwId = hwId
         self.TCPPort = TCPPort
@@ -386,7 +396,25 @@ class InteractiveSim:
         iface0 = self.init_forward()
         self.init_communication(iface0)
 
+    @staticmethod
+    def resolve_program_path(program_path):
+        if program_path is None:
+            return None
+
+        if os.path.isdir(program_path):
+            candidate = os.path.join(program_path, 'program')
+        else:
+            candidate = program_path
+
+        return os.path.abspath(candidate)
+
     def init_nodes(self, args):
+        legacy_nodes = [n.nodeid for n in self.nodes if n.legacy]
+
+        if self.docker and legacy_nodes:
+            print("Legacy firmware selection is only supported in native mode, not with Docker.")
+            exit(1)
+
         if self.docker:
             try:
                 import docker
@@ -429,15 +457,32 @@ class InteractiveSim:
             # run nodes natively (WSL + gnome-terminal / xterm)
             os.makedirs("out", exist_ok=True)
 
-            prog = os.path.join(args.program, 'program')
+            aodv_prog = self.resolve_program_path(args.program)
+            legacy_prog = self.resolve_program_path(args.legacy_program)
+
+            if not os.path.isfile(aodv_prog):
+                print(f"AODV firmware binary not found: {aodv_prog}")
+                exit(1)
+
+            if legacy_nodes and legacy_prog is None:
+                print("A legacy firmware binary is required for nodes with legacy: true. Use --legacy-program.")
+                exit(1)
+
+            if legacy_nodes and not os.path.isfile(legacy_prog):
+                print(f"Legacy firmware binary not found: {legacy_prog}")
+                exit(1)
 
             for n in self.nodes:
+                prog = legacy_prog if n.legacy else aodv_prog
+                firmware_name = "legacy managed flooding" if n.legacy else "AODV"
                 node_args = (
                     f"-d {os.path.expanduser('~')}/.portduino/node{n.nodeid} "
                     f"-h {n.hwId} "
                     f"-p {n.TCPPort} "
                     + ("-e " if self.removeConfig else "")
                 )
+
+                print(f"Starting node {n.nodeid} with {firmware_name} firmware: {prog}")
 
                 # Force line buffering so logs appear live AND get written
                 cmd = f"stdbuf -oL -eL {prog} {node_args} 2>&1 | tee out/node{n.nodeid}.log"

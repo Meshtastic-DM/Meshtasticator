@@ -15,6 +15,7 @@ parser.add_argument('-d', '--docker', action='store_true')
 parser.add_argument('--from-file', action='store_true')
 parser.add_argument('-f', '--forward', action='store_true')
 parser.add_argument('-p', '--program', type=str, default=os.getcwd())
+parser.add_argument('--legacy-program', type=str)
 parser.add_argument('-c', '--collisions', action='store_true')
 parser.add_argument('nrNodes', type=int, nargs='?', choices=range(0, 11), default=0)
 

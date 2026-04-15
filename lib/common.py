@@ -146,6 +146,7 @@ def gen_scenario(conf):
 		'hopLimit': nodeHopLimit[n],
 		'antennaGain': gains[n],
 		'neighborInfo': neighborInfo[n],
+		'legacy': False,
 	} for n in range(len(nodeX))}
 	if save:
 		if not os.path.isdir("out"):
