@@ -7,6 +7,51 @@ import yaml
 import os
 from shutil import which
 import subprocess
+import logging
+from google.protobuf.message import DecodeError
+import meshtastic.mesh_interface as mesh_interface_mod
+from pubsub import pub
+
+
+def _install_decode_fallback_patch():
+    if getattr(mesh_interface_mod.MeshInterface, "_decode_fallback_patched", False):
+        return
+
+    _orig = mesh_interface_mod.MeshInterface._handlePacketFromRadio
+
+    def _safe_handle(self, meshPacket):
+        try:
+            return _orig(self, meshPacket)
+        except DecodeError as ex:
+            logging.warning("[sim-bridge] protobuf decode failed -> raw passthrough: %s", ex)
+
+            pkt = {
+                "from": int(getattr(meshPacket, "from", 0)),
+                "to": int(getattr(meshPacket, "to", 0)),
+                "id": int(getattr(meshPacket, "id", 0)),
+                "channel": int(getattr(meshPacket, "channel", 0)),
+                "hopLimit": int(getattr(meshPacket, "hop_limit", 0)),
+                "hopStart": int(getattr(meshPacket, "hop_start", 0)),
+                "wantAck": bool(getattr(meshPacket, "want_ack", False)),
+            }
+
+            # preserve whichever payload exists
+            if hasattr(meshPacket, "decoded") and len(getattr(meshPacket.decoded, "payload", b"")) > 0:
+                pkt["decoded"] = {
+                    "portnum": int(getattr(meshPacket.decoded, "portnum", 0)),
+                    "payload": bytes(getattr(meshPacket.decoded, "payload", b"")),
+                }
+            elif len(getattr(meshPacket, "encrypted", b"")) > 0:
+                pkt["encrypted"] = bytes(getattr(meshPacket, "encrypted", b""))
+            else:
+                return None
+
+            pub.sendMessage("meshtastic.receive", interface=self, packet=pkt)
+            pub.sendMessage("meshtastic.receive.simulator", interface=self, packet=pkt)
+            return None
+
+    mesh_interface_mod.MeshInterface._handlePacketFromRadio = _safe_handle
+    mesh_interface_mod.MeshInterface._decode_fallback_patched = True
 
 
 import google.protobuf.json_format as proto
@@ -354,6 +399,7 @@ class InteractiveGraph(Graph):
 
 class InteractiveSim:
     def __init__(self, args):
+        _install_decode_fallback_patch()
         self.messages = []
         self.messageId = -1
         self.nodes = []
@@ -658,8 +704,12 @@ class InteractiveSim:
         if self.serial_iface is None:
             return
         try:
+            # physical radio can only transmit as itself -> map sender to mirror hwId
+            pkt = dict(packet)
+            pkt["from"] = self.nodes[self.mirrorNode].hwId
+
             tr = mesh_pb2.ToRadio()
-            tr.packet.CopyFrom(self._dict_to_meshpacket(packet))
+            tr.packet.CopyFrom(self._dict_to_meshpacket(pkt))
             self.serial_iface._sendToRadio(tr)
         except Exception as ex:
             print(f"[serial] forward failed: {ex}")
@@ -680,7 +730,30 @@ class InteractiveSim:
         rxs, rssis, snrs = self.calc_receivers(tx, receivers)
         self.forward_packet(rxs, packet, rssis, snrs)
 
-    def forward_packet(self, receivers, packet, rssis, snrs):
+    def forward_packet(self, rxs, packet, rssis, snrs):
+        # normalize name to avoid NameError
+        receivers = rxs
+
+        decoded = packet.get("decoded")
+        if decoded is not None and "payload" in decoded:
+            data = decoded.get("payload", b"")
+        elif "encrypted" in packet:
+            data = packet.get("encrypted", b"")
+        else:
+            print(f"[forward] skip packet id={packet.get('id')} (no decoded/encrypted payload)")
+            return
+
+        if getattr(data, "SerializeToString", None):
+            data = data.SerializeToString()
+        if isinstance(data, str):
+            data = data.encode("utf-8", errors="ignore")
+        if not isinstance(data, (bytes, bytearray)):
+            try:
+                data = bytes(data)
+            except Exception:
+                data = b""
+
+        # keep the rest of your original forward logic unchanged
         meshPacket = mesh_pb2.MeshPacket()
 
         # Common header fields
@@ -871,10 +944,13 @@ class InteractiveSim:
             self.forward_packet(rxs, packet, rssis, snrs)
             self.graph.packets.append(rP)
 
-            # NEW: mirror node simulator -> physical
+            # Forward simulator-origin traffic from ANY virtual node to physical mesh
             pkt_id = packet.get("id")
             self._gc_seen()
-            if self.serial_iface is not None and transmitter.nodeid == self.mirrorNode:
+
+            came_from_serial = (self.serial_iface is not None and interface is self.serial_iface)
+            if self.serial_iface is not None and not came_from_serial:
+                # avoid loopback of packets previously injected from serial
                 if not self._seen_recent(self._seen_from_serial, pkt_id):
                     self._mark_seen(self._seen_to_serial, pkt_id)
                     self._forward_to_serial(packet)
