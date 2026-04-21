@@ -11,6 +11,9 @@ import logging
 from google.protobuf.message import DecodeError
 import meshtastic.mesh_interface as mesh_interface_mod
 from pubsub import pub
+from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
+# or keep grouped:
+# from meshtastic.protobuf import admin_pb2, mesh_pb2, portnums_pb2, telemetry_pb2
 
 
 def _install_decode_fallback_patch():
@@ -56,7 +59,7 @@ def _install_decode_fallback_patch():
 
 import google.protobuf.json_format as proto
 from matplotlib import patches
-from meshtastic import tcp_interface, serial_interface, BROADCAST_NUM, mesh_pb2, admin_pb2, telemetry_pb2, portnums_pb2, channel_pb2
+from meshtastic import tcp_interface, serial_interface, BROADCAST_NUM, mesh_pb2, portnums_pb2
 from pubsub import pub
 import numpy as np
 import matplotlib.pyplot as plt
@@ -704,8 +707,7 @@ class InteractiveSim:
         if self.serial_iface is None:
             return
         try:
-            # physical radio can only transmit as itself -> map sender to mirror hwId
-            pkt = dict(packet)
+            pkt = _rewrite_sim_to_physical(packet)
             pkt["from"] = self.nodes[self.mirrorNode].hwId
 
             tr = mesh_pb2.ToRadio()
@@ -734,6 +736,7 @@ class InteractiveSim:
         # normalize name to avoid NameError
         receivers = rxs
 
+        packet = _rewrite_physical_to_sim(packet)
         decoded = packet.get("decoded")
         if decoded is not None and "payload" in decoded:
             data = decoded.get("payload", b"")
@@ -1209,3 +1212,68 @@ class CommandProcessor(cmd.Cmd):
         Exit the simulator without plotting routes."""
         self.sim.close_nodes()
         return True
+
+
+SIM_APP_PORT = int(getattr(portnums_pb2.PortNum, "SIMULATOR_APP", 0))
+TEXT_APP_PORT = int(getattr(portnums_pb2.PortNum, "TEXT_MESSAGE_APP", 1))
+UNKNOWN_APP_PORT = int(getattr(portnums_pb2.PortNum, "UNKNOWN_APP", 0))
+
+def _pnum(v):
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str):
+        return int(getattr(portnums_pb2.PortNum, v.split(".")[-1], 0))
+    return 0
+
+def _b(v):
+    if v is None:
+        return b""
+    if isinstance(v, bytes):
+        return v
+    if isinstance(v, bytearray):
+        return bytes(v)
+    if isinstance(v, str):
+        return v.encode("utf-8", errors="ignore")
+    if getattr(v, "SerializeToString", None):
+        return v.SerializeToString()
+    return bytes(v)
+
+def _rewrite_sim_to_physical(packet: dict) -> dict:
+    out = dict(packet)
+    d = out.get("decoded")
+    if not d:
+        return out
+
+    if _pnum(d.get("portnum", 0)) == SIM_APP_PORT:
+        # Prefer unwrapping Compressed payload from SIMULATOR_APP
+        try:
+            c = mesh_pb2.Compressed()
+            c.ParseFromString(_b(d.get("payload", b"")))
+            if int(c.portnum) == UNKNOWN_APP_PORT:
+                out.pop("decoded", None)
+                out["encrypted"] = bytes(c.data)
+            else:
+                out["decoded"] = {
+                    "portnum": TEXT_APP_PORT,   # force text for physical side
+                    "payload": bytes(c.data),
+                }
+        except Exception:
+            # fallback: only rewrite port number
+            out["decoded"]["portnum"] = TEXT_APP_PORT
+    return out
+
+def _rewrite_physical_to_sim(packet: dict) -> dict:
+    out = dict(packet)
+    d = out.get("decoded")
+    if not d:
+        return out
+
+    if _pnum(d.get("portnum", 0)) == TEXT_APP_PORT:
+        c = mesh_pb2.Compressed()
+        c.portnum = TEXT_APP_PORT
+        c.data = _b(d.get("payload", b""))
+        out["decoded"] = {
+            "portnum": SIM_APP_PORT,
+            "payload": c.SerializeToString(),
+        }
+    return out
