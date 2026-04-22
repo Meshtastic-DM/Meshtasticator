@@ -227,11 +227,38 @@ graph.save()
 for node in nodes:
     print(node)
 
-    # ---------- AODV routing table ----------
-    if isinstance(node, (MeshNode_AODV, MeshNode_MPAODV)):
+    # ---------- MPAODV routing table (with path details) ----------
+    if isinstance(node, MeshNode_MPAODV):
         routeTable = node.get_route_table()
         if len(routeTable) > 0:
-            print(f"\nNode {node.nodeid} route table:")
+            print(f"\nNode {node.nodeid} MPAODV route table:")
+            for dest, entry in routeTable.items():
+                paths = entry.get("paths", [])
+                if paths:
+                    for p in paths:
+                        print(
+                            f"  Dest: {dest}, "
+                            f"PathId: {p['pathId']}, "
+                            f"Next Hop: {p['nextHop']}, "
+                            f"Hop Count: {p['hopCount']}, "
+                            f"Seq: {p['destSeqNum']}"
+                        )
+                else:
+                    print(
+                        f"  Dest: {dest}, "
+                        f"PathId: 0, "
+                        f"Next Hop: {entry['nextHop']}, "
+                        f"Hop Count: {entry['hopCount']}, "
+                        f"Seq: {entry['destSeqNum']}"
+                    )
+        else:
+            print(f"\nNode {node.nodeid} has an empty MPAODV route table.")
+
+    # ---------- AODV routing table ----------
+    elif isinstance(node, MeshNode_AODV):
+        routeTable = node.get_route_table()
+        if len(routeTable) > 0:
+            print(f"\nNode {node.nodeid} AODV route table:")
             for dest, entry in routeTable.items():
                 print(
                     f"  Dest: {dest}, "

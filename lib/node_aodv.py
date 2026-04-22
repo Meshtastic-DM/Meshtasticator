@@ -639,7 +639,7 @@ class MeshNode_AODV(MeshNode):
             }
         return route_info
     
-    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime = 4000000):
+    def update_routing_table(self, destId, nextHop, hopCount, destSeqNum, valid=True,precursorList=[], lifeTime=None):
         if nextHop is None:
             self.verboseprint(
                 "[ROUTE INSTALL NEXT_HOP_NONE]",
@@ -651,6 +651,8 @@ class MeshNode_AODV(MeshNode):
                 "| hint", "You are installing a broken route entry",
             )
 
+        timeout = lifeTime if lifeTime is not None else getattr(self.conf, "AODV_ACTIVE_ROUTE_TIMEOUT", 4000000)
+
         self.routing_table[destId] = RouteEntry(
             destId=destId,
             nextHop=nextHop,
@@ -658,7 +660,7 @@ class MeshNode_AODV(MeshNode):
             destSeqNum=destSeqNum,
             valid=valid,
             precursorList=precursorList,
-            lifeTime=self.env.now + lifeTime  
+            lifeTime=self.env.now + timeout  
         )
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated routing table for', destId, 'via', nextHop)
 

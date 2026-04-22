@@ -109,6 +109,15 @@ class Config:
         ### MPAODV CONFIGURATION ###
         ############################
         self.MPAODV_MAX_PATHS = 3
+        # Keep AODV and MPAODV route timeout aligned for fair comparisons.
+        self.AODV_ACTIVE_ROUTE_TIMEOUT = 30 * self.ONE_MIN_INTERVAL
+        self.MPAODV_ACTIVE_ROUTE_TIMEOUT = self.AODV_ACTIVE_ROUTE_TIMEOUT
+        self.MPAODV_ROUTE_KEEPALIVE_TIMEOUT = 2 * self.ONE_MIN_INTERVAL
+        self.MPAODV_RREQ_RATE_LIMIT = 3 * self.ONE_SECOND_INTERVAL
+        self.MPAODV_RREQ_RETRIES = 3
+        self.MPAODV_MAX_PENDING_PACKETS_PER_DEST = 32
+        self.MPAODV_BUFFER_TIMEOUT = 5 * self.ONE_MIN_INTERVAL
+        self.MPAODV_SEEN_RREQ_MAX_AGE = 2 * self.ONE_MIN_INTERVAL
 
        
 

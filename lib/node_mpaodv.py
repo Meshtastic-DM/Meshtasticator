@@ -16,6 +16,7 @@ class MeshNode_MPAODV(MeshNode):
     def __init__(self, conf, nodes, env, bc_pipe, nodeid, period, messages, packetsAtN, packets, delays, nodeConfig, messageSeq, verboseprint):
         super().__init__( conf, nodes, env, bc_pipe, nodeid, period, messages, packetsAtN, packets, delays, nodeConfig, messageSeq, verboseprint)
         self.routing_table = {}  # key: destination nodeId, value: next hop nodeId
+        self.route_lists = {}  # key: destination nodeId, value: list[RouteEntry] (pathId 0..N-1)
         self.rreq_id_counter = 0  # Counter for generating unique RREQ IDs
         self.pending_rreq = {}  # key: (destId), value: list of packets waiting for route
         self.seq_num = 0  # Sequence number for this node
@@ -27,7 +28,114 @@ class MeshNode_MPAODV(MeshNode):
         self.forwarded_rrep = set()  # Set to track forwarded RREPs to avoid loops
 
         self.sdn_node_num = None  # Node number of the SDN controller
+        self.seen_rreqs = {}  # originator -> destSeqNum -> {"response_seq": int, "relays": [(relay, time)]}
+        self.rreq_rate_limit = {}  # destination -> last send time
+        self.max_paths = getattr(self.conf, "MPAODV_MAX_PATHS", 3)
+        self.active_route_timeout = getattr(self.conf, "MPAODV_ACTIVE_ROUTE_TIMEOUT", 4000000)
+        self.route_keepalive_timeout = getattr(self.conf, "MPAODV_ROUTE_KEEPALIVE_TIMEOUT", 120000)
+        self.rreq_rate_limit_ms = getattr(self.conf, "MPAODV_RREQ_RATE_LIMIT", 3000)
+        self.max_seen_rreq_age = getattr(self.conf, "MPAODV_SEEN_RREQ_MAX_AGE", 120000)
         
+    def _cleanup_route_list(self, destId):
+        routes = self.route_lists.get(destId, [])
+        if not routes:
+            self.routing_table.pop(destId, None)
+            return []
+
+        routes = [r for r in routes if r.valid and r.lifeTime > self.env.now]
+        for idx, r in enumerate(routes):
+            r.pathId = idx
+
+        if routes:
+            self.route_lists[destId] = routes
+            self.routing_table[destId] = routes[0]
+        else:
+            self.route_lists.pop(destId, None)
+            self.routing_table.pop(destId, None)
+        return routes
+
+    def find_route(self, destination):
+        routes = self._cleanup_route_list(destination)
+        if routes:
+            return routes[0]
+        return None
+
+    def get_all_routes(self, destination):
+        return self._cleanup_route_list(destination)
+
+    def refresh_route_on_use(self, destination):
+        route = self.find_route(destination)
+        if route is not None:
+            route.lifeTime = max(route.lifeTime, self.env.now) + self.route_keepalive_timeout
+            self.routing_table[destination] = route
+            self.verboseprint(
+                "MPAODV ROUTE KEEPALIVE:",
+                "dest", destination,
+                "pathId", route.pathId,
+                "next_hop", route.nextHop,
+                "new_life", round(route.lifeTime, 3),
+            )
+
+    def can_send_rreq(self, destination):
+        last = self.rreq_rate_limit.get(destination)
+        return last is None or (self.env.now - last) >= self.rreq_rate_limit_ms
+
+    def mark_rreq_rate_limit(self, destination):
+        self.rreq_rate_limit[destination] = self.env.now
+
+    def has_seen_rreq(self, originator, requestKey, relayNode):
+        by_origin = self.seen_rreqs.get(originator)
+        if by_origin is None:
+            return False
+        by_dest_seq = by_origin.get(requestKey)
+        if by_dest_seq is None:
+            return False
+        relays = by_dest_seq["relays"]
+        if len(relays) >= self.max_paths:
+            return True
+        return any(relay == relayNode for relay, _ in relays)
+
+    def mark_rreq_as_seen(self, originator, requestKey, relayNode):
+        by_origin = self.seen_rreqs.setdefault(originator, {})
+        by_dest_seq = by_origin.get(requestKey)
+        if by_dest_seq is None:
+            self.seq_num += 1
+            response_seq = self.seq_num
+            by_dest_seq = {"response_seq": response_seq, "relays": [(relayNode, self.env.now)]}
+            by_origin[requestKey] = by_dest_seq
+        else:
+            response_seq = by_dest_seq["response_seq"]
+            if len(by_dest_seq["relays"]) < self.max_paths and not any(relay == relayNode for relay, _ in by_dest_seq["relays"]):
+                by_dest_seq["relays"].append((relayNode, self.env.now))
+        return response_seq
+
+    def cleanup_seen_rreqs(self):
+        for originator in list(self.seen_rreqs.keys()):
+            for dest_seq in list(self.seen_rreqs[originator].keys()):
+                relays = self.seen_rreqs[originator][dest_seq]["relays"]
+                relays = [(relay, ts) for relay, ts in relays if (self.env.now - ts) <= self.max_seen_rreq_age]
+                if relays:
+                    self.seen_rreqs[originator][dest_seq]["relays"] = relays
+                else:
+                    del self.seen_rreqs[originator][dest_seq]
+            if not self.seen_rreqs[originator]:
+                del self.seen_rreqs[originator]
+
+    def _next_hop(self, destination, touch_keepalive=False):
+        route = self.find_route(destination)
+        if route is None:
+            return None
+        if touch_keepalive:
+            self.refresh_route_on_use(destination)
+        return route.nextHop
+
+    def _get_rreq_relay_hop(self, packet):
+        # In this simulator, txNodeId is the immediate relay hop for received packets.
+        relay = getattr(packet, "txNodeId", None)
+        if relay is None:
+            relay = getattr(packet, "origTxNodeId", None)
+        return relay
+
     
     def aodv_reliable_retransmit(self, p):
         """
@@ -76,9 +184,7 @@ class MeshNode_MPAODV(MeshNode):
             # No ACK → retransmit if we still have retries
             if p.retransmissions > 0:
                 # Must re-evaluate next hop (route might have changed)
-                nh = None
-                if p.destId in self.routing_table and self.routing_table[p.destId].valid:
-                    nh = self.routing_table[p.destId].nextHop
+                nh = self._next_hop(p.destId, touch_keepalive=True)
 
                 # If no route now, stop (or you can trigger a new RREQ)
                 if nh is None:
@@ -153,11 +259,12 @@ class MeshNode_MPAODV(MeshNode):
         p.is_sdn_update = is_sdn_update
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'preparing to send packet', p.seq, 'to', destId,'is_sdn_update:',is_sdn_update)
         if destId != NODENUM_BROADCAST:
-            if destId in self.routing_table and self.routing_table[destId].valid and (self.routing_table[destId].lifeTime > self.env.now or destId == self.sdn_node_num):
+            route = self.find_route(destId)
+            if route is not None and (route.lifeTime > self.env.now or destId == self.sdn_node_num):
                 pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
                 pNew.is_sdn_update = p.is_sdn_update
                 pNew.hopLimit = p.hopLimit - 1
-                pNew.next_hop = self.routing_table[destId].nextHop if destId in self.routing_table else None
+                pNew.next_hop = route.nextHop
                 if pNew.next_hop is None:
                     self.verboseprint(
                         "[DATA SEND NEXT_HOP_NONE]",
@@ -173,13 +280,18 @@ class MeshNode_MPAODV(MeshNode):
                     )
 
                 self.packets.append(pNew)
-                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is sending packet', pNew.seq, 'to', pNew.destId, 'via next hop', self.routing_table[destId].nextHop)
+                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is sending packet', pNew.seq, 'to', pNew.destId, 'via next hop', route.nextHop, 'pathId', route.pathId)
+                self.refresh_route_on_use(destId)
                 self.env.process(self.transmit(pNew))
             else:
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'no valid route to', destId, 'initiating route discovery')
                 # Initiate route discovery
                 p.queued_no_route = True
-                self.initiate_route_discovery(destId)
+                if self.can_send_rreq(destId):
+                    self.initiate_route_discovery(destId)
+                    self.mark_rreq_rate_limit(destId)
+                else:
+                    self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'RREQ rate-limited for', destId, 'buffering packet')
                 self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is initiating route discovery for', destId)
                 # Store the packet to be sent once the route is discovered
                 if (destId) not in self.pending_rreq:
@@ -234,7 +346,23 @@ class MeshNode_MPAODV(MeshNode):
         if packet.origTxNodeId == self.nodeid:
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is the source of RREQ, ignoring')
             return  # RREQ originated from this node, ignore
-        # Check if this RREQ has been processed before
+        relayHop = self._get_rreq_relay_hop(packet)
+
+        # Update routing table with reverse route to the source
+        self.update_routing_table(packet.origTxNodeId, relayHop, packet.hop_count + 1, packet.seq)
+        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated reverse route to', packet.origTxNodeId, 'via relay', relayHop)
+        # If this node is the destination, send RREP    
+        if packet.destId == self.nodeid:
+            requestKey = packet.rreq_id if packet.rreq_id is not None else packet.seq
+            if self.has_seen_rreq(packet.origTxNodeId, requestKey, relayHop):
+                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'duplicate/limit RREQ path from', packet.origTxNodeId, 'RREQ_ID', packet.rreq_id, 'via relay', relayHop)
+                return
+            responseSeq = self.mark_rreq_as_seen(packet.origTxNodeId, requestKey, relayHop)
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is destination for RREQ, sending RREP to', packet.origTxNodeId, 'with next_hop(relay)', relayHop, 'response_seq', responseSeq)
+            self.send_rrep(packet, nextHopOverride=relayHop, responseSeq=responseSeq)
+            return
+
+        # Check if this RREQ has been processed before (for forwarding nodes)
         if (packet.origTxNodeId, packet.rreq_id) in self.processed_rreq:
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'already processed RREQ from', packet.origTxNodeId, 'RREQ_ID', packet.rreq_id)
             return  # Already processed
@@ -242,26 +370,7 @@ class MeshNode_MPAODV(MeshNode):
         # Mark this RREQ as processed
         self.processed_rreq.add((packet.origTxNodeId, packet.rreq_id))
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'marked RREQ as processed from', packet.origTxNodeId, 'RREQ_ID', packet.rreq_id)
-
-        # Update routing table with reverse route to the source
-        if packet.origTxNodeId not in self.routing_table or not self.routing_table[packet.origTxNodeId].valid or \
-           packet.hop_count + 1 < self.routing_table[packet.origTxNodeId].hopCount:
-            # self.routing_table[packet.origTxNodeId] = RouteEntry(
-            #     destId=packet.origTxNodeId,
-            #     nextHop=packet.txNodeId,
-            #     hopCount=packet.hop_count + 1,
-            #     destSeqNum=packet.seq,
-            #     valid=True,
-            #     precursorList=[],
-            #     lifeTime=self.env.now + 300000  
-            # )
-            self.update_routing_table(packet.origTxNodeId, packet.txNodeId, packet.hop_count + 1, packet.seq)
-            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated reverse route to', packet.origTxNodeId, 'via', packet.txNodeId)
-        # If this node is the destination, send RREP    
-        if packet.destId == self.nodeid:
-            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'is destination for RREQ, sending RREP to', packet.origTxNodeId)
-            self.send_rrep(packet)
-        elif packet.ttl > 1:
+        if packet.ttl > 1:
             # Forward the RREQ
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'forwarding RREQ from', packet.origTxNodeId, 'for', packet.destId, 'RREQ_ID', packet.rreq_id)
             fwd_packet = MeshPacket_AODV(self.conf, self.nodes, packet.origTxNodeId, packet.destId, self.nodeid, 10, packet.seq, self.env.now, False, False, None, self.env.now, self.verboseprint, rreq_id=packet.rreq_id)
@@ -276,8 +385,8 @@ class MeshNode_MPAODV(MeshNode):
             self.env.process(self.transmit(fwd_packet)) # Rebroadcast the RREQ
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'rebroadcasted RREQ for', packet.destId, 'RREQ_ID', packet.rreq_id)
 
-    def send_rrep(self, rreq_packet):
-        key = (rreq_packet.rreq_id, rreq_packet.origTxNodeId, rreq_packet.destId)
+    def send_rrep(self, rreq_packet, nextHopOverride=None, responseSeq=None):
+        key = (rreq_packet.rreq_id, rreq_packet.origTxNodeId, rreq_packet.destId, nextHopOverride)
         if key in self.processed_rrep:
             self.verboseprint('AODV: duplicate RREP dropped', key)
             return
@@ -292,7 +401,10 @@ class MeshNode_MPAODV(MeshNode):
         rrep_packet.hop_count = 0
         rrep_packet.ttl = 64  # Initial TTL value for RREP
         rrep_packet.hopLimit =5
-        rrep_packet.next_hop = self.routing_table.get(rreq_packet.origTxNodeId).nextHop if rreq_packet.origTxNodeId in self.routing_table else None
+        if responseSeq is not None:
+            rrep_packet.seq = responseSeq
+        reverseRoute = self.find_route(rreq_packet.origTxNodeId)
+        rrep_packet.next_hop = nextHopOverride if nextHopOverride is not None else (reverseRoute.nextHop if reverseRoute is not None else None)
         if rrep_packet.next_hop is None:
             self.verboseprint(
                 "[RREP SEND NEXT_HOP_NONE]",
@@ -358,7 +470,8 @@ class MeshNode_MPAODV(MeshNode):
                 for p in self.pending_rreq[key]:
                     pNew = MeshPacket_AODV(self.conf, self.nodes, p.origTxNodeId, p.destId, self.nodeid, p.packetLen, p.seq, p.genTime, p.wantAck, p.isAck, None, self.env.now, self.verboseprint,data=p.data)
                     pNew.is_sdn_update = p.is_sdn_update
-                    pNew.next_hop = self.routing_table.get(p.destId).nextHop if p.destId in self.routing_table else None
+                    route = self.find_route(p.destId)
+                    pNew.next_hop = route.nextHop if route is not None else None
                     self.packets.append(pNew)
                     self.env.process(self.transmit(pNew))
                     self.env.process(self.aodv_reliable_retransmit(pNew))
@@ -374,7 +487,8 @@ class MeshNode_MPAODV(MeshNode):
             fwd_packet.hop_count = packet.hop_count + 1
             fwd_packet.ttl = packet.ttl - 1
             fwd_packet.hopLimit = packet.hopLimit - 1
-            nextHop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None
+            route = self.find_route(packet.destId)
+            nextHop = route.nextHop if route is not None else None
             if nextHop is None:
                 self.verboseprint(
                     "[RREP FWD NEXT_HOP_NONE]",
@@ -405,6 +519,8 @@ class MeshNode_MPAODV(MeshNode):
         # Invalidate the route to the unreachable destination
         if packet.destId in self.routing_table:
             self.routing_table[packet.destId].valid = False
+            self.route_lists.pop(packet.destId, None)
+            self.routing_table.pop(packet.destId, None)
             self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'invalidated route to', packet.destId)
         # Forward the RERR to precursors if any
         for precursor in self.routing_table.get(packet.destId, RouteEntry(None, None, None, None, False, [], None)).precursorList:
@@ -421,6 +537,7 @@ class MeshNode_MPAODV(MeshNode):
     def receive(self, pipe):
         while True:
             packet = yield pipe.get()
+            self.cleanup_seen_rreqs()
             if packet.sensedByN[self.nodeid] and not packet.collidedAtN[self.nodeid] and packet.onAirToN[self.nodeid]:  # start of reception
                 if not self.isTransmitting:
                     self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'started receiving packet', packet.seq, 'from', packet.txNodeId)
@@ -468,7 +585,8 @@ class MeshNode_MPAODV(MeshNode):
                         self.messages.append(MeshMessage(self.nodeid, packet.origTxNodeId, self.env.now, messageSeq))
                         self.update_routing_table(packet.origTxNodeId, packet.txNodeId, packet.hop_count + 1, packet.seq)
                         ack_packet = MeshPacket_AODV(self.conf, self.nodes, self.nodeid, packet.origTxNodeId, self.nodeid, 10, messageSeq, self.env.now, False, True, packet.seq, self.env.now, self.verboseprint)
-                        ack_packet.next_hop = self.routing_table.get(packet.origTxNodeId).nextHop if packet.origTxNodeId in self.routing_table else None
+                        reverseRoute = self.find_route(packet.origTxNodeId)
+                        ack_packet.next_hop = reverseRoute.nextHop if reverseRoute is not None else None
                         if ack_packet.next_hop is None:
                             self.verboseprint(
                                 "[ACK SEND NEXT_HOP_NONE]",
@@ -565,7 +683,8 @@ class MeshNode_MPAODV(MeshNode):
                 else:
                     if packet.hopLimit >= 0:
                         if not self.isClientMute and packet.next_hop == self.nodeid:
-                            next_hop = self.routing_table.get(packet.destId).nextHop if packet.destId in self.routing_table else None
+                            route = self.find_route(packet.destId)
+                            next_hop = route.nextHop if route is not None else None
                             if packet.destId != NODENUM_BROADCAST and next_hop is None:
                                 self.verboseprint(
                                     "[DATA FWD NEXT_HOP_NONE]",
@@ -629,13 +748,28 @@ class MeshNode_MPAODV(MeshNode):
                         sentPacket.ackReceived = True
     def get_route_table(self):
         route_info = {}
-        for destId, entry in self.routing_table.items():
+        for destId in list(self.route_lists.keys()):
+            routes = self.get_all_routes(destId)
+            if not routes:
+                continue
             route_info[destId] = {
-                'nextHop': entry.nextHop,
-                'hopCount': entry.hopCount,
-                'destSeqNum': entry.destSeqNum,
-                'valid': entry.valid,
-                'lifeTime': entry.lifeTime
+                'nextHop': routes[0].nextHop,
+                'hopCount': routes[0].hopCount,
+                'destSeqNum': routes[0].destSeqNum,
+                'valid': routes[0].valid,
+                'lifeTime': routes[0].lifeTime,
+                'pathCount': len(routes),
+                'paths': [
+                    {
+                        'pathId': r.pathId,
+                        'nextHop': r.nextHop,
+                        'hopCount': r.hopCount,
+                        'destSeqNum': r.destSeqNum,
+                        'valid': r.valid,
+                        'lifeTime': r.lifeTime,
+                    }
+                    for r in routes
+                ]
             }
         return route_info
     
@@ -650,17 +784,55 @@ class MeshNode_MPAODV(MeshNode):
                 "| destSeqNum", destSeqNum,
                 "| hint", "You are installing a broken route entry",
             )
+            return
 
-        self.routing_table[destId] = RouteEntry(
-            destId=destId,
-            nextHop=nextHop,
-            hopCount=hopCount,
-            destSeqNum=destSeqNum,
-            valid=valid,
-            precursorList=precursorList,
-            lifeTime=self.env.now + lifeTime  
-        )
-        self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated routing table for', destId, 'via', nextHop)
+        timeout = lifeTime if lifeTime is not None else self.active_route_timeout
+        expiry = self.env.now + timeout
+        routes = self.route_lists.get(destId, [])
+
+        # Drop expired routes first.
+        routes = [r for r in routes if r.valid and r.lifeTime > self.env.now]
+
+        # Newer destination sequence invalidates old path set.
+        if routes and destSeqNum != 0 and destSeqNum > routes[0].destSeqNum:
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'newer seq for', destId, 'old', routes[0].destSeqNum, 'new', destSeqNum, 'clearing old paths')
+            routes = []
+
+        existing = next((r for r in routes if r.nextHop == nextHop), None)
+        if existing is not None:
+            if destSeqNum >= existing.destSeqNum and hopCount <= existing.hopCount:
+                existing.hopCount = hopCount
+                existing.destSeqNum = destSeqNum
+                existing.valid = valid
+                existing.precursorList = precursorList
+                existing.lifeTime = expiry
+                self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'refreshed MPAODV path for', destId, 'via', nextHop, 'pathId', existing.pathId)
+        elif len(routes) < self.max_paths:
+            new_path = RouteEntry(
+                destId=destId,
+                nextHop=nextHop,
+                hopCount=hopCount,
+                destSeqNum=destSeqNum,
+                valid=valid,
+                precursorList=precursorList,
+                lifeTime=expiry,
+                pathId=len(routes),
+            )
+            routes.append(new_path)
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'added MPAODV path for', destId, 'via', nextHop, 'pathId', new_path.pathId, 'total', len(routes))
+        else:
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'ignored extra MPAODV path for', destId, 'via', nextHop, '(max paths reached)')
+
+        for idx, r in enumerate(routes):
+            r.pathId = idx
+
+        if routes:
+            self.route_lists[destId] = routes
+            self.routing_table[destId] = routes[0]
+            self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'updated MPAODV primary route for', destId, 'via', routes[0].nextHop, 'pathCount', len(routes))
+        else:
+            self.route_lists.pop(destId, None)
+            self.routing_table.pop(destId, None)
 
     def handle_sdn_update(self,packet):
         self.verboseprint('At time', round(self.env.now, 3), 'node', self.nodeid, 'handling SDN update packet', packet.seq)
@@ -670,7 +842,7 @@ class MeshNode_MPAODV(MeshNode):
         pass
 
 class RouteEntry:
-    def __init__(self, destId, nextHop, hopCount, destSeqNum, valid, precursorList, lifeTime):
+    def __init__(self, destId, nextHop, hopCount, destSeqNum, valid, precursorList, lifeTime, pathId=0):
         self.destId = destId
         self.nextHop = nextHop
         self.hopCount = hopCount
@@ -678,4 +850,5 @@ class RouteEntry:
         self.valid = valid
         self.precursorList = precursorList  # list of nodeIds
         self.lifeTime = lifeTime  # expiration time
+        self.pathId = pathId
         
