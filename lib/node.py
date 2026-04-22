@@ -271,7 +271,11 @@ class MeshNode:
                     break
                 else:
                     if minRetransmissions > 0:  # generate new packet with same sequence number
-                        if self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV:
+                        if (
+                            self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.AODV
+                            or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.SDN_AODV
+                            or self.conf.SELECTED_ROUTER_TYPE == self.conf.ROUTER_TYPE.MPAODV
+                        ):
                             ############ AODV version ############
                             if getattr(p, "queued_no_route", False):
                                 break   # next message generation cycle

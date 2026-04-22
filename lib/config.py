@@ -7,6 +7,7 @@ class Config:
     class ROUTER_TYPE(Enum):
         MANAGED_FLOOD = 'MANAGED_FLOOD'
         AODV = 'AODV'
+        MPAODV = 'MPAODV'
         SDN_AODV = 'SDN_AODV'
         ZRP = 'ZRP'
 
@@ -90,7 +91,7 @@ class Config:
         ############################
         # This can also be overwritten by scenarios defined in batchSim.py
         # or by passing this as the second command line param to loraMesh.py
-        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.ZRP
+        self.SELECTED_ROUTER_TYPE = self.ROUTER_TYPE.MPAODV
 
         ############################
         #### ZRP CONFIGURATION #####
@@ -103,6 +104,11 @@ class Config:
 
         self.ZRP_FLUSH_DELAY_MSEC = 3000
         self.ZRP_FLUSH_JITTER_MSEC = 1200
+
+        ############################
+        ### MPAODV CONFIGURATION ###
+        ############################
+        self.MPAODV_MAX_PATHS = 3
 
        
 

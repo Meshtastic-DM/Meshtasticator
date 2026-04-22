@@ -15,6 +15,7 @@ from lib.config import Config
 from lib.discrete_event import BroadcastPipe
 from lib.node import MeshNode
 from lib.node_aodv import MeshNode_AODV
+from lib.node_mpaodv import MeshNode_MPAODV
 from lib.node_zrp import MeshNode_ZRP
 
 VERBOSE = True
@@ -141,6 +142,11 @@ if conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.AODV:
 		node = MeshNode_AODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
 		nodes.append(node)
 		graph.add_node(node)
+elif conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.MPAODV:
+	for i in range(conf.NR_NODES):
+		node = MeshNode_MPAODV(conf, nodes, env, bc_pipe, i, conf.PERIOD, messages, packetsAtN, packets, delays, nodeConfig[i], messageSeq, verboseprint)
+		nodes.append(node)
+		graph.add_node(node)
 elif conf.SELECTED_ROUTER_TYPE == conf.ROUTER_TYPE.SDN_AODV:
 	from lib.node_sdn import MeshNode_SDN
 	for i in range(conf.NR_NODES):
@@ -222,10 +228,10 @@ for node in nodes:
     print(node)
 
     # ---------- AODV routing table ----------
-    if isinstance(node, MeshNode_AODV):
+    if isinstance(node, (MeshNode_AODV, MeshNode_MPAODV)):
         routeTable = node.get_route_table()
         if len(routeTable) > 0:
-            print(f"\nNode {node.nodeid} AODV route table:")
+            print(f"\nNode {node.nodeid} route table:")
             for dest, entry in routeTable.items():
                 print(
                     f"  Dest: {dest}, "
