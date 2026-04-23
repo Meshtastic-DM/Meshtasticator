@@ -1225,7 +1225,7 @@ def _pnum(v):
         return int(getattr(portnums_pb2.PortNum, v.split(".")[-1], 0))
     return 0
 
-def _b(v):
+def _to_bytes(v):
     if v is None:
         return b""
     if isinstance(v, bytes):
@@ -1239,27 +1239,33 @@ def _b(v):
     return bytes(v)
 
 def _rewrite_sim_to_physical(packet: dict) -> dict:
+    """
+    Simulator -> physical boundary:
+    - If decoded.portnum == SIMULATOR_APP, unwrap Compressed.
+    - Convert plaintext port to TEXT_MESSAGE_APP.
+    - Preserve ciphertext as encrypted payload.
+    """
     out = dict(packet)
     d = out.get("decoded")
     if not d:
         return out
 
-    if _pnum(d.get("portnum", 0)) == SIM_APP_PORT:
-        # Prefer unwrapping Compressed payload from SIMULATOR_APP
-        try:
-            c = mesh_pb2.Compressed()
-            c.ParseFromString(_b(d.get("payload", b"")))
-            if int(c.portnum) == UNKNOWN_APP_PORT:
-                out.pop("decoded", None)
-                out["encrypted"] = bytes(c.data)
-            else:
-                out["decoded"] = {
-                    "portnum": TEXT_APP_PORT,   # force text for physical side
-                    "payload": bytes(c.data),
-                }
-        except Exception:
-            # fallback: only rewrite port number
-            out["decoded"]["portnum"] = TEXT_APP_PORT
+    if _pnum(d.get("portnum", 0)) != SIM_APP_PORT:
+        return out
+
+    c = mesh_pb2.Compressed()
+    c.ParseFromString(_to_bytes(d.get("payload", b"")))
+
+    if int(c.portnum) == UNKNOWN_APP_PORT:
+        out.pop("decoded", None)
+        out["encrypted"] = bytes(c.data)
+    else:
+        out["decoded"] = {
+            "portnum": TEXT_APP_PORT,
+            "payload": bytes(c.data),
+        }
+        out.pop("encrypted", None)
+
     return out
 
 def _rewrite_physical_to_sim(packet: dict) -> dict:
@@ -1267,13 +1273,14 @@ def _rewrite_physical_to_sim(packet: dict) -> dict:
     d = out.get("decoded")
     if not d:
         return out
+    if _pnum(d.get("portnum", 0)) != TEXT_APP_PORT:
+        return out
 
-    if _pnum(d.get("portnum", 0)) == TEXT_APP_PORT:
-        c = mesh_pb2.Compressed()
-        c.portnum = TEXT_APP_PORT
-        c.data = _b(d.get("payload", b""))
-        out["decoded"] = {
-            "portnum": SIM_APP_PORT,
-            "payload": c.SerializeToString(),
-        }
+    c = mesh_pb2.Compressed()
+    c.portnum = TEXT_APP_PORT
+    c.data = _to_bytes(d.get("payload", b""))
+    out["decoded"] = {
+        "portnum": SIM_APP_PORT,
+        "payload": c.SerializeToString(),
+    }
     return out
