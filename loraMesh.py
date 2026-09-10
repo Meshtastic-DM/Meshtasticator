@@ -17,7 +17,7 @@ from lib.node import MeshNode
 from lib.node_aodv import MeshNode_AODV
 from lib.node_zrp import MeshNode_ZRP
 
-VERBOSE = True
+VERBOSE = False
 conf = Config()
 random.seed(conf.SEED)
 
@@ -414,25 +414,71 @@ print("Reliability of sensor packets from each node to node 0:", realibilityMatr
 
 
 
-x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
+# x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
+
+# plt.figure(figsize=(8, 6))
+# bars = plt.bar(x, realibilityMatrix, color='skyblue', edgecolor='black')
+
+# # Add value labels on top of each bar
+# for i, val in enumerate(realibilityMatrix):
+#     plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+
+# plt.xlabel("Source Node ID")
+# plt.ylabel("Reliability to Destination 0")
+# plt.title("Reliability from Sensors to Destination Node 0")
+# plt.xticks(x, [f"Src {i}" for i in x])
+# plt.grid(axis='y')
+# plt.tight_layout()
+# plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+# import pickle
+# with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+#     pickle.dump(plt.gcf(), f)
+# plt.close()
+
+# Plot reliability only for actual sensor nodes
+sensor_ids = sorted(CreatedSensorPackets.keys())
+sensor_reliabilities = [realibilityMatrix[node_id] for node_id in sensor_ids]
 
 plt.figure(figsize=(8, 6))
-bars = plt.bar(x, realibilityMatrix, color='skyblue', edgecolor='black')
 
-# Add value labels on top of each bar
-for i, val in enumerate(realibilityMatrix):
-    plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+bars = plt.bar(sensor_ids, sensor_reliabilities)
 
-plt.xlabel("Source Node ID")
-plt.ylabel("Reliability to Destination 0")
-plt.title("Reliability from Sensors to Destination Node 0")
-plt.xticks(x, [f"Src {i}" for i in x])
-plt.grid(axis='y')
+# Add reliability values above bars
+for node_id, value in zip(sensor_ids, sensor_reliabilities):
+    if not np.isnan(value):
+        plt.text(
+            node_id,
+            value + 0.02,
+            f"{value:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=10
+        )
+
+plt.xlabel("Sensor Node ID")
+plt.ylabel("Reliability to Destination Node 0")
+plt.title("Sensor Packet Delivery Reliability to Node 0")
+
+plt.xticks(sensor_ids)
+plt.ylim(0, 1.1)
+
+plt.grid(axis="y")
 plt.tight_layout()
-plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+
+plt.savefig(
+    f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png",
+    dpi=200,
+    bbox_inches="tight"
+)
+
 import pickle
-with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+
+with open(
+    f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl",
+    "wb"
+) as f:
     pickle.dump(plt.gcf(), f)
+
 plt.close()
 
 realiabilityDm = [[0 for _ in range(N)] for _ in range(N)]
