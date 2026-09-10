@@ -519,20 +519,96 @@ with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb')
     pickle.dump(plt.gcf(), f)
 plt.close()
 
+# source = None
+
+# for node in nodes:
+# 	if node.simRole == "Control_Center":
+# 		source = node.nodeid
+# 		realibilityBroadcast = [0 for _ in range(N)]
+# 		for dest in range(N):
+# 			if source != dest:
+# 				realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
+# 			else:
+# 				realibilityBroadcast[dest] = None
+
+# 		realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+# 		break
+
 source = None
 
 for node in nodes:
-	if node.simRole == "Control_Center":
-		source = node.nodeid
-		realibilityBroadcast = [0 for _ in range(N)]
-		for dest in range(N):
-			if source != dest:
-				realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
-			else:
-				realibilityBroadcast[dest] = None
+    if node.simRole == "Control_Center":
+        source = node.nodeid
+        break
 
-		realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
-		break
+if source is not None and TotalCreatedPackets > 0:
+
+    realibilityBroadcast = [None for _ in range(N)]
+
+    for dest in range(N):
+
+        if source == dest:
+            continue
+
+        if dest in RecivedBroadcastPackets:
+            realibilityBroadcast[dest] = (
+                RecivedBroadcastPackets[dest] / TotalCreatedPackets
+            )
+
+    realibilityBroadcast = np.array(
+        [
+            val if val is not None else np.nan
+            for val in realibilityBroadcast
+        ],
+        dtype=float
+    )
+
+    plt.figure(figsize=(8, 6))
+
+    bars = plt.bar(
+        range(len(realibilityBroadcast)),
+        realibilityBroadcast
+    )
+
+    for i, val in enumerate(realibilityBroadcast):
+        if not np.isnan(val):
+            plt.text(
+                i,
+                val + 0.01,
+                f"{val:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=10
+            )
+
+    plt.xlabel("Destination Node ID")
+    plt.ylabel("Reliability of Broadcast Packets")
+    plt.title("Broadcast Packet Delivery Reliability")
+
+    plt.grid(axis="y")
+    plt.tight_layout()
+
+    plt.savefig(
+        f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png",
+        dpi=200,
+        bbox_inches="tight"
+    )
+
+    import pickle
+
+    with open(
+        f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl",
+        "wb"
+    ) as f:
+        pickle.dump(plt.gcf(), f)
+
+    plt.close()
+
+else:
+    print(
+        "No broadcast packets were generated; "
+        "skipping broadcast reliability calculation."
+    )
 
 
 if source is not None:
