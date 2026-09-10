@@ -541,6 +541,8 @@ for node in nodes:
         source = node.nodeid
         break
 
+realibilityBroadcast = np.full(N, np.nan, dtype=float)
+
 if source is not None and TotalCreatedPackets > 0:
 
     realibilityBroadcast = [None for _ in range(N)]
@@ -611,22 +613,24 @@ else:
     )
 
 
-if source is not None:
-	plt.figure(figsize=(8, 6))
-	bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
-	# Add value labels on top of each bar
-	for i, val in enumerate(realibilityBroadcast):
-		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
-	plt.xlabel("Destination Node ID")
-	plt.ylabel("Reliability of Broadcast Packets")
-	plt.title("Broadcast Packet Delivery Reliability")
-	plt.grid(axis='y')
-	plt.tight_layout()
-	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
-	import pickle
-	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
-	    pickle.dump(plt.gcf(), f)
-plt.close()
+# if source is not None:
+# 	plt.figure(figsize=(8, 6))
+# 	bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
+# 	# Add value labels on top of each bar
+# 	for i, val in enumerate(realibilityBroadcast):
+# 		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+# 	plt.xlabel("Destination Node ID")
+# 	plt.ylabel("Reliability of Broadcast Packets")
+# 	plt.title("Broadcast Packet Delivery Reliability")
+# 	plt.grid(axis='y')
+# 	plt.tight_layout()
+# 	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+# 	import pickle
+# 	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+# 	    pickle.dump(plt.gcf(), f)
+# plt.close()
+
+
 if source is not None:
 	delaySensor = [0 for _ in range(N)]
 	dest = source
