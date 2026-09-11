@@ -400,14 +400,56 @@ class InteractiveSim:
                         time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
                     self.container.exec_run(f"{startNode} -s -d /home/node{n0.nodeid} -h {n.hwId} -p {n.TCPPort}", detach=True, user="root")
                 print(f"Docker container with name {self.container.name} is started.")
+            # else:
+            #     self.container = dockerClient.containers.run(
+            #         DEVICE_SIM_DOCKER_IMAGE,
+            #         command=f"sh -cx '{startNode} -s -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort} > /home/out_{n0.nodeid}.log'",
+            #         ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
+            #         name="Meshtastic", detach=True, auto_remove=False, user="root",
+            #         volumes={"Meshtasticator": {'bind': '/home/', 'mode': 'rw'}}
+            #     )
+
             else:
+                # Keep the Docker container alive independently of the Meshtastic nodes
                 self.container = dockerClient.containers.run(
                     DEVICE_SIM_DOCKER_IMAGE,
-                    command=f"sh -cx '{startNode} -s -d /home/node{n0.nodeid} -h {n0.hwId} -p {n0.TCPPort} > /home/out_{n0.nodeid}.log'",
-                    ports=dict(zip((f'{n.TCPPort}/tcp' for n in self.nodes), (n.TCPPort for n in self.nodes))),
-                    name="Meshtastic", detach=True, auto_remove=True, user="root",
+                    command="sh -cx 'while true; do sleep 1; done'",
+                    ports=dict(zip(
+                        (f'{n.TCPPort}/tcp' for n in self.nodes),
+                        (n.TCPPort for n in self.nodes)
+                    )),
+                    name="Meshtastic",
+                    detach=True,
+                    auto_remove=False,   # keep False for debugging
+                    user="root",
                     volumes={"Meshtasticator": {'bind': '/home/', 'mode': 'rw'}}
                 )
+
+                # Start each simulated Meshtastic node separately
+                for n in self.nodes:
+                    if self.emulateCollisions:
+                        time.sleep(2)
+
+                    self.container.exec_run(
+                        f"sh -cx '{startNode} -s "
+                        f"-d /home/node{n.nodeid} "
+                        f"-h {n.hwId} "
+                        f"-p {n.TCPPort} "
+                        f"> /home/out_{n.nodeid}.log 2>&1'",
+                        detach=True,
+                        user="root"
+                    )
+
+                print(
+                    f"Docker container with name "
+                    f"{self.container.name} is started."
+                )
+                print(
+                    f"You can check the device logs using "
+                    f"'docker exec -it {self.container.name} "
+                    f"cat /home/out_x.log', where x is the node number."
+                )
+
                 for n in self.nodes[1:]:
                     if self.emulateCollisions:
                         time.sleep(2)  # Wait a bit to avoid immediate collisions when starting multiple nodes
