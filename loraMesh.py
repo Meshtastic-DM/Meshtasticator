@@ -17,7 +17,7 @@ from lib.node import MeshNode
 from lib.node_aodv import MeshNode_AODV
 from lib.node_zrp import MeshNode_ZRP
 
-VERBOSE = True
+VERBOSE = False
 conf = Config()
 random.seed(conf.SEED)
 
@@ -414,25 +414,71 @@ print("Reliability of sensor packets from each node to node 0:", realibilityMatr
 
 
 
-x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
+# x = list(range(len(realibilityMatrix)))  # [0, 1, 2, 3, 4]
+
+# plt.figure(figsize=(8, 6))
+# bars = plt.bar(x, realibilityMatrix, color='skyblue', edgecolor='black')
+
+# # Add value labels on top of each bar
+# for i, val in enumerate(realibilityMatrix):
+#     plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+
+# plt.xlabel("Source Node ID")
+# plt.ylabel("Reliability to Destination 0")
+# plt.title("Reliability from Sensors to Destination Node 0")
+# plt.xticks(x, [f"Src {i}" for i in x])
+# plt.grid(axis='y')
+# plt.tight_layout()
+# plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+# import pickle
+# with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+#     pickle.dump(plt.gcf(), f)
+# plt.close()
+
+# Plot reliability only for actual sensor nodes
+sensor_ids = sorted(CreatedSensorPackets.keys())
+sensor_reliabilities = [realibilityMatrix[node_id] for node_id in sensor_ids]
 
 plt.figure(figsize=(8, 6))
-bars = plt.bar(x, realibilityMatrix, color='skyblue', edgecolor='black')
 
-# Add value labels on top of each bar
-for i, val in enumerate(realibilityMatrix):
-    plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+bars = plt.bar(sensor_ids, sensor_reliabilities)
 
-plt.xlabel("Source Node ID")
-plt.ylabel("Reliability to Destination 0")
-plt.title("Reliability from Sensors to Destination Node 0")
-plt.xticks(x, [f"Src {i}" for i in x])
-plt.grid(axis='y')
+# Add reliability values above bars
+for node_id, value in zip(sensor_ids, sensor_reliabilities):
+    if not np.isnan(value):
+        plt.text(
+            node_id,
+            value + 0.02,
+            f"{value:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=10
+        )
+
+plt.xlabel("Sensor Node ID")
+plt.ylabel("Reliability to Destination Node 0")
+plt.title("Sensor Packet Delivery Reliability to Node 0")
+
+plt.xticks(sensor_ids)
+plt.ylim(0, 1.1)
+
+plt.grid(axis="y")
 plt.tight_layout()
-plt.savefig(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+
+plt.savefig(
+    f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.png",
+    dpi=200,
+    bbox_inches="tight"
+)
+
 import pickle
-with open(f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+
+with open(
+    f"output/sensor_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl",
+    "wb"
+) as f:
     pickle.dump(plt.gcf(), f)
+
 plt.close()
 
 realiabilityDm = [[0 for _ in range(N)] for _ in range(N)]
@@ -473,38 +519,118 @@ with open(f"output/dm_reliability_matrix_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb')
     pickle.dump(plt.gcf(), f)
 plt.close()
 
+# source = None
+
+# for node in nodes:
+# 	if node.simRole == "Control_Center":
+# 		source = node.nodeid
+# 		realibilityBroadcast = [0 for _ in range(N)]
+# 		for dest in range(N):
+# 			if source != dest:
+# 				realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
+# 			else:
+# 				realibilityBroadcast[dest] = None
+
+# 		realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
+# 		break
+
 source = None
 
 for node in nodes:
-	if node.simRole == "Control_Center":
-		source = node.nodeid
-		realibilityBroadcast = [0 for _ in range(N)]
-		for dest in range(N):
-			if source != dest:
-				realibilityBroadcast[dest] = RecivedBroadcastPackets[dest] / TotalCreatedPackets if dest in RecivedBroadcastPackets else None
-			else:
-				realibilityBroadcast[dest] = None
+    if node.simRole == "Control_Center":
+        source = node.nodeid
+        break
 
-		realibilityBroadcast = np.array([val if val is not None else np.nan for val in realibilityBroadcast], dtype=float)
-		break
+realibilityBroadcast = np.full(N, np.nan, dtype=float)
+
+if source is not None and TotalCreatedPackets > 0:
+
+    realibilityBroadcast = [None for _ in range(N)]
+
+    for dest in range(N):
+
+        if source == dest:
+            continue
+
+        if dest in RecivedBroadcastPackets:
+            realibilityBroadcast[dest] = (
+                RecivedBroadcastPackets[dest] / TotalCreatedPackets
+            )
+
+    realibilityBroadcast = np.array(
+        [
+            val if val is not None else np.nan
+            for val in realibilityBroadcast
+        ],
+        dtype=float
+    )
+
+    plt.figure(figsize=(8, 6))
+
+    bars = plt.bar(
+        range(len(realibilityBroadcast)),
+        realibilityBroadcast
+    )
+
+    for i, val in enumerate(realibilityBroadcast):
+        if not np.isnan(val):
+            plt.text(
+                i,
+                val + 0.01,
+                f"{val:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=10
+            )
+
+    plt.xlabel("Destination Node ID")
+    plt.ylabel("Reliability of Broadcast Packets")
+    plt.title("Broadcast Packet Delivery Reliability")
+
+    plt.grid(axis="y")
+    plt.tight_layout()
+
+    plt.savefig(
+        f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png",
+        dpi=200,
+        bbox_inches="tight"
+    )
+
+    import pickle
+
+    with open(
+        f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl",
+        "wb"
+    ) as f:
+        pickle.dump(plt.gcf(), f)
+
+    plt.close()
+
+else:
+    print(
+        "No broadcast packets were generated; "
+        "skipping broadcast reliability calculation."
+    )
 
 
-if source is not None:
-	plt.figure(figsize=(8, 6))
-	bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
-	# Add value labels on top of each bar
-	for i, val in enumerate(realibilityBroadcast):
-		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
-	plt.xlabel("Destination Node ID")
-	plt.ylabel("Reliability of Broadcast Packets")
-	plt.title("Broadcast Packet Delivery Reliability")
-	plt.grid(axis='y')
-	plt.tight_layout()
-	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
-	import pickle
-	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
-	    pickle.dump(plt.gcf(), f)
-plt.close()
+# if source is not None:
+# 	plt.figure(figsize=(8, 6))
+# 	bars = plt.bar(range(len(realibilityBroadcast)), realibilityBroadcast, color='skyblue', edgecolor='black')
+# 	# Add value labels on top of each bar
+# 	for i, val in enumerate(realibilityBroadcast):
+# 		plt.text(i, val + 0.01, f"{val:.2f}", ha='center', va='bottom', fontsize=10)
+# 	plt.xlabel("Destination Node ID")
+# 	plt.ylabel("Reliability of Broadcast Packets")
+# 	plt.title("Broadcast Packet Delivery Reliability")
+# 	plt.grid(axis='y')
+# 	plt.tight_layout()
+# 	plt.savefig(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.png", dpi=200, bbox_inches='tight')
+# 	import pickle
+# 	with open(f"output/broadcast_reliability_{conf.SELECTED_ROUTER_TYPE}.pkl", 'wb') as f:
+# 	    pickle.dump(plt.gcf(), f)
+# plt.close()
+
+
 if source is not None:
 	delaySensor = [0 for _ in range(N)]
 	dest = source
